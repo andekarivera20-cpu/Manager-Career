@@ -7247,6 +7247,8 @@ loadDB=async function(){
     ST:/ST|CF/
   };
   const GROUP_LABEL_V118={GK:'portero',DEF:'defensa',MID:'centrocampista',WIDE:'jugador de banda / creativo',ST:'delantero'};
+  function deadlineV118(date=S.date){const md=String(date||'').slice(5);return md==='08-31'||md==='01-31'}
+
 
   function aiV118(){
     S.clubAIV118=S.clubAIV118||{season:null,clubs:{},moves:[],lastWeekly:null,lastDaily:null};
@@ -7497,7 +7499,7 @@ loadDB=async function(){
       return{club,score:(needs[0]?.score||0)+pf.ambition*2+Math.min(12,(f.budget||0)/5000000)+Math.random()*8};
     }).sort((a,b)=>b.score-a.score);
 
-    const attempts=deadlineDayV113?.(date)?6:rnd(2,4);
+    const attempts=deadlineV118(date)?6:rnd(2,4);
     let done=0;
     for(const x of urgency){
       if(done>=attempts)break;
@@ -7529,6 +7531,12 @@ loadDB=async function(){
     const b=S.pendingBids?.find(x=>String(x.id)===String(id)&&x.status==='pending');
     const ai=b?.aiPlanV118?financeV118(b.buyer):null;
     const reserved=b?.aiPlanV118?Math.min(b.fee||0,ai?.reserved||0):0;
+    if(b?.aiPlanV118&&ai&&(b.fee||0)>(ai.budget||0)){
+      b.status='rejected';
+      ai.reserved=Math.max(0,(ai.reserved||0)-reserved);
+      addNews('Operación caída',b.buyer+' no puede asumir finalmente '+euro(b.fee||0)+' por '+b.player+'.','mercado');
+      save();render('transfers');return;
+    }
     acceptBidV118Base(id);
     if(b?.aiPlanV118&&ai){
       ai.reserved=Math.max(0,(ai.reserved||0)-reserved);
