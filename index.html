@@ -2479,6 +2479,311 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== PLAYER REQUESTS 10.3 =====
+// Peticiones personales contextuales: renovación, sueldo, capitanía, cesión y salida.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.requests-v103{display:grid;gap:9px}'+
+    '.request-v103{border:1px solid var(--line);border-radius:12px;padding:11px;background:#0a1510}'+
+    '.request-v103.urgent{border-color:#6f3535;background:#201111}'+
+    '.request-head-v103{display:flex;align-items:flex-start;gap:9px}'+
+    '.request-icon-v103{font-size:24px;line-height:1}'+
+    '.request-actions-v103{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px}'+
+    '.request-actions-v103 .btn{min-height:42px}'+
+    '.request-pill-v103{display:inline-flex;padding:3px 7px;border-radius:999px;border:1px solid var(--line);font-size:10px;font-weight:900;margin-top:5px}'+
+    '@media(max-width:650px){.request-actions-v103{grid-template-columns:1fr}}';
+  document.head.appendChild(style);
+
+  const ensureV103Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV103Base();
+    if(!S)return;
+    S.playerRequests=S.playerRequests||[];
+    S.requestHistory=S.requestHistory||[];
+    for(const p of (S.players||[])){
+      p.personalRequestCooldown=p.personalRequestCooldown||null;
+      p.transferListed=!!p.transferListed;
+      p.loanApproved=!!p.loanApproved;
+    }
+  };
+
+  function requestMetaV103(type){
+    return({
+      renew:{icon:'📝',title:'Quiere renovar',accept:'Renovar',detail:'Su contrato entra en una fase importante.'},
+      salary:{icon:'💶',title:'Pide una subida',accept:'Aceptar subida',detail:'Cree que su rendimiento y estatus merecen un salario mayor.'},
+      captain:{icon:'©️',title:'Quiere ser capitán',accept:'Dar capitanía',detail:'Cree que ya tiene peso suficiente en el vestuario.'},
+      loan:{icon:'✈️',title:'Pide salir cedido',accept:'Aceptar cesión',detail:'Busca minutos para seguir desarrollándose.'},
+      exit:{icon:'🚪',title:'Pide salir del club',accept:'Facilitar salida',detail:'No está satisfecho con su situación actual.'}
+    }[type]||{icon:'💬',title:'Petición personal',accept:'Aceptar',detail:''});
+  }
+
+  function activeRequestForV103(p){
+    return (S.playerRequests||[]).find(r=>r.playerId===p.id&&r.status==='pending');
+  }
+
+  function daysToContractV103(p,date){
+    if(!p.contractUntil)return 9999;
+    return dateDiff(date,p.contractUntil);
+  }
+
+  function requestCandidatesV103(date){
+    const ps=getClubPlayers(S.club).filter(p=>!p.parentClub&&!activeRequestForV103(p)&&( !p.personalRequestCooldown || p.personalRequestCooldown<=date ));
+    const apps=Math.max(1,S.record?.p||0);
+    const out=[];
+    for(const p of ps){
+      const ratio=(p.starts||0)/apps;
+      const contractDays=daysToContractV103(p,date);
+      const wageTarget=Math.max(1200,Math.round((p.value||0)/4500));
+      if((p.wantsOut||(p.morale||70)<40)&&!p.transferListed)out.push({p,type:'exit',weight:9});
+      if(contractDays>=0&&contractDays<=420)out.push({p,type:'renew',weight:8});
+      if(p.age<=22&&apps>=5&&ratio<.3&&(p.overall||0)<=82&&!p.loanApproved)out.push({p,type:'loan',weight:6});
+      if(apps>=6&&(p.avgRating||0)>=6.9&&(p.wage||0)<wageTarget*.82)out.push({p,type:'salary',weight:5});
+      if(p.hierarchy==='Líder'&&p.id!==S.captainId&&p.age>=25&&(p.morale||70)>=68)out.push({p,type:'captain',weight:4});
+    }
+    return out;
+  }
+
+  function weightedPickV103(rows){
+    if(!rows.length)return null;
+    const total=rows.reduce((a,x)=>a+x.weight,0);
+    let roll=Math.random()*total;
+    for(const row of rows){roll-=row.weight;if(roll<=0)return row}
+    return rows[rows.length-1];
+  }
+
+  function createPlayerRequestV103(date){
+    if(new Date(date+'T12:00:00Z').getUTCDay()!==1)return;
+    const pending=(S.playerRequests||[]).filter(r=>r.status==='pending');
+    if(pending.length>=2||Math.random()>.24)return;
+    const chosen=weightedPickV103(requestCandidatesV103(date));
+    if(!chosen)return;
+    const p=chosen.p,meta=requestMetaV103(chosen.type);
+    const req={
+      id:'RQ'+Date.now()+Math.random().toString(36).slice(2,6),
+      playerId:p.id,type:chosen.type,date,status:'pending',
+      expires:isoAdd(date,21)
+    };
+    S.playerRequests.push(req);
+    p.personalRequestCooldown=isoAdd(date,90);
+    pushDayEventV7(date,{type:'conflict',text:p.name+': '+meta.title.toLowerCase()+'.'});
+    addNews('Petición del vestuario',p.name+' quiere hablar contigo: '+meta.title.toLowerCase()+'.','vestuario');
+  }
+
+  function loanOutV103(p){
+    if(!p||p.club!==S.club)return false;
+    const myR=clubRatingDB(S.club);
+    const pool=[...DB.clubs.keys()].filter(c=>{
+      if(c===S.club)return false;
+      const r=clubRatingDB(c);
+      return r>=myR-16&&r<=myR+1;
+    });
+    const buyer=pick(pool);
+    if(!buyer)return false;
+    const old=S.club;
+    p.parentClub=old;
+    p.club=buyer;
+    p.leagueId=DB.clubs.get(buyer)?.leagueId||p.leagueId;
+    p.leagueName=EURO_LEAGUES[p.leagueId]?.name||p.leagueName;
+    p.loanUntil=currentSeasonEndV7();
+    p.loanApproved=false;
+    p.morale=clamp((p.morale||70)+7,20,100);
+    p.happinessReason='Cedido para tener más minutos';
+    S.lineup=S.lineup.filter(id=>id!==p.id);
+    S.bench=S.bench.filter(id=>id!==p.id);
+    S.transfers.push({date:S.date,type:'LOAN_OUT',player:p.name,from:old,to:buyer,fee:0});
+    addNews('Cesión acordada',p.name+' se marcha cedido a '+buyer+' hasta final de temporada.','mercado');
+    autoLineup();
+    return true;
+  }
+
+  function maybeProcessApprovedLoansV103(date){
+    if(!isWindowOpen(date))return;
+    const ps=getClubPlayers(S.club).filter(p=>p.loanApproved&&!p.parentClub);
+    for(const p of ps){
+      if(Math.random()<.18)loanOutV103(p);
+    }
+  }
+
+  function maybeListedBidV103(date){
+    if(!isWindowOpen(date))return;
+    const candidates=getClubPlayers(S.club).filter(p=>p.transferListed&&!S.pendingBids.some(b=>b.playerId===p.id&&b.status==='pending'));
+    if(!candidates.length||Math.random()>.18)return;
+    const p=pick(candidates);
+    const myR=clubRatingDB(S.club);
+    const buyers=[...DB.clubs.keys()].filter(c=>c!==S.club&&clubRatingDB(c)>=myR-10);
+    const buyer=pick(buyers);
+    if(!buyer)return;
+    const fee=Math.round((p.value||500000)*(.88+Math.random()*.28));
+    S.pendingBids.push({id:'BRQ'+date+'-'+p.id,playerId:p.id,player:p.name,buyer,fee,date,status:'pending'});
+    pushDayEventV7(date,{type:'bid',text:buyer+' ofrece '+euro(fee)+' por '+p.name+'.'});
+    addNews('Oferta por jugador transferible',buyer+' presenta una oferta por '+p.name+'.','mercado');
+  }
+
+  function expireRequestsV103(date){
+    for(const r of (S.playerRequests||[]).filter(x=>x.status==='pending'&&x.expires&&x.expires<date)){
+      const p=S.players.find(x=>x.id===r.playerId);
+      r.status='expired';
+      if(p){
+        p.morale=clamp((p.morale||70)-7,20,100);
+        p.happinessReason='Molesto porque su petición fue ignorada';
+        if(r.type==='exit'||p.morale<35)p.wantsOut=true;
+        addNews('Petición ignorada',p.name+' está molesto porque no recibió respuesta.','vestuario');
+      }
+    }
+  }
+
+  function resolveRequestV103(id,choice){
+    const r=(S.playerRequests||[]).find(x=>x.id===id&&x.status==='pending');
+    const p=r&&S.players.find(x=>x.id===r.playerId);
+    if(!r||!p)return;
+    const meta=requestMetaV103(r.type);
+
+    if(choice==='accept'){
+      if(r.type==='renew'){
+        const y=Math.max(contractYear(),+(p.contractUntil||String(contractYear())).slice(0,4));
+        p.contractUntil=(y+3)+'-06-30';
+        p.wage=Math.round(Math.max(500,p.wage||1000)*1.12);
+        p.morale=clamp((p.morale||70)+8,20,100);
+        p.happinessReason='Feliz tras renovar su contrato';
+        addNews('Renovación acordada',p.name+' amplía su contrato hasta '+p.contractUntil.slice(0,4)+'.','contrato');
+      }else if(r.type==='salary'){
+        const old=p.wage||1000;
+        p.wage=Math.round(Math.max(old*1.18,(p.value||0)/5000));
+        p.morale=clamp((p.morale||70)+7,20,100);
+        p.happinessReason='Contento con su nuevo salario';
+        addNews('Mejora salarial',p.name+' recibe una subida de '+euro(p.wage-old)+'/sem.','contrato');
+      }else if(r.type==='captain'){
+        const old=S.players.find(x=>x.id===S.captainId);
+        S.captainId=p.id;
+        p.morale=clamp((p.morale||70)+10,20,100);
+        p.happinessReason='Orgulloso de ser capitán';
+        if(old&&old.id!==p.id)old.morale=clamp((old.morale||70)-3,20,100);
+        addNews('Nuevo capitán',p.name+' recibe el brazalete de '+S.club+'.','vestuario');
+      }else if(r.type==='loan'){
+        p.loanApproved=true;
+        p.morale=clamp((p.morale||70)+6,20,100);
+        p.happinessReason='El club acepta buscarle una cesión';
+        if(isWindowOpen(S.date))loanOutV103(p);
+        else addNews('Cesión autorizada',p.name+' saldrá cedido cuando se abra el mercado.','mercado');
+      }else if(r.type==='exit'){
+        p.wantsOut=true;
+        p.transferListed=true;
+        p.morale=clamp((p.morale||70)+3,20,100);
+        p.happinessReason='El club facilitará su salida';
+        addNews('Salida autorizada',S.club+' acepta escuchar ofertas por '+p.name+'.','mercado');
+      }
+      r.status='accepted';
+      r.resolved=S.date;
+    }else if(choice==='talk'){
+      p.morale=clamp((p.morale||70)+1,20,100);
+      p.personalRequestCooldown=isoAdd(S.date,45);
+      p.happinessReason='Ha hablado con el entrenador sobre su situación';
+      r.status='talked';
+      r.resolved=S.date;
+      addNews('Reunión con el jugador',p.name+' acepta esperar antes de volver a plantear su petición.','vestuario');
+    }else{
+      const hit=r.type==='exit'?-10:r.type==='captain'?-7:-6;
+      p.morale=clamp((p.morale||70)+hit,20,100);
+      p.happinessReason='Molesto por el rechazo de su petición';
+      if(r.type==='exit'||p.morale<34)p.wantsOut=true;
+      r.status='rejected';
+      r.resolved=S.date;
+      addNews('Petición rechazada',p.name+' no está satisfecho con la respuesta del entrenador.','vestuario');
+    }
+    S.requestHistory.unshift({...r,player:p.name});
+    S.requestHistory=S.requestHistory.slice(0,80);
+    save();
+    render('dressing');
+  }
+  window.resolveRequestV103=resolveRequestV103;
+
+  const worldDayTickV103Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayTickV103Base(date);
+    ensureV7State();
+    expireRequestsV103(date);
+    createPlayerRequestV103(date);
+    maybeProcessApprovedLoansV103(date);
+    maybeListedBidV103(date);
+  };
+
+  const acceptBidV103Base=acceptIncomingBid;
+  acceptIncomingBid=function(id){
+    const b=S.pendingBids.find(x=>x.id===id&&x.status==='pending');
+    const p=b&&S.players.find(x=>x.id===b.playerId);
+    acceptBidV103Base(id);
+    if(p&&b?.status==='accepted'){
+      p.transferListed=false;
+      p.wantsOut=false;
+    }
+  };
+
+  const rejectBidV103Base=rejectIncomingBid;
+  rejectIncomingBid=function(id){
+    const b=S.pendingBids.find(x=>x.id===id&&x.status==='pending');
+    const p=b&&S.players.find(x=>x.id===b.playerId);
+    rejectBidV103Base(id);
+    if(p&&p.transferListed){
+      p.morale=clamp((p.morale||70)-2,20,100);
+      p.happinessReason='Frustrado porque se rechazó una oferta';
+      save();
+    }
+  };
+
+  function requestsHTMLV103(){
+    const reqs=(S.playerRequests||[]).filter(r=>r.status==='pending');
+    if(!reqs.length)return '<div class="empty">Nadie tiene una petición personal pendiente.</div>';
+    return '<div class="requests-v103">'+reqs.map(r=>{
+      const p=S.players.find(x=>x.id===r.playerId);
+      if(!p)return'';
+      const m=requestMetaV103(r.type);
+      const days=Math.max(0,dateDiff(S.date,r.expires));
+      const extra=r.type==='renew'?'Contrato actual: '+(p.contractUntil||'—'):
+        r.type==='salary'?'Salario actual: '+euro(p.wage||0)+'/sem':
+        r.type==='captain'?'Jerarquía: '+(p.hierarchy||'—'):
+        r.type==='loan'?'Titularidades: '+(p.starts||0)+' de '+Math.max(1,S.record?.p||0)+' partidos':
+        'Moral: '+Math.round(p.morale||70)+'%';
+      return '<div class="request-v103 '+(r.type==='exit'?'urgent':'')+'">'+
+        '<div class="request-head-v103"><span class="request-icon-v103">'+m.icon+'</span><div><strong>'+esc(p.name)+' · '+esc(m.title)+'</strong><div class="muted">'+esc(m.detail)+'</div><span class="request-pill-v103">'+esc(extra)+' · '+days+' días para responder</span></div></div>'+
+        '<div class="request-actions-v103"><button class="btn primary reqActV103" data-id="'+r.id+'" data-c="accept">'+esc(m.accept)+'</button><button class="btn ghost reqActV103" data-id="'+r.id+'" data-c="talk">💬 Hablar</button><button class="btn danger reqActV103" data-id="'+r.id+'" data-c="reject">Rechazar</button></div>'+
+      '</div>';
+    }).join('')+'</div>';
+  }
+
+  const renderDressingV103Base=renderDressing;
+  renderDressing=function(){
+    ensureV7State();
+    renderDressingV103Base();
+    const anchor=els.view.querySelector('.room-kpis-v102');
+    if(!anchor)return;
+    const card=document.createElement('div');
+    card.className='card';
+    card.style.marginBottom='14px';
+    card.innerHTML='<div class="row"><h3 style="margin:0">Peticiones de jugadores</h3><span class="spacer"></span><span class="badge">'+(S.playerRequests||[]).filter(r=>r.status==='pending').length+' pendientes</span></div><div style="margin-top:10px">'+requestsHTMLV103()+'</div>';
+    anchor.insertAdjacentElement('afterend',card);
+    card.querySelectorAll('.reqActV103').forEach(b=>b.onclick=()=>resolveRequestV103(b.dataset.id,b.dataset.c));
+  };
+
+  const renderHomeV103Base=renderHome;
+  renderHome=function(){
+    ensureV7State();
+    renderHomeV103Base();
+    const n=(S.playerRequests||[]).filter(r=>r.status==='pending').length;
+    if(!n)return;
+    const roomBtn=els.view.querySelector('#goRoomV102');
+    const card=roomBtn?.closest('.card');
+    if(card){
+      const alert=document.createElement('div');
+      alert.className='issue-card urgent';
+      alert.style.marginTop='9px';
+      alert.innerHTML='<strong>💬 '+n+' petición'+(n===1?'':'es')+' de jugador'+(n===1?'':'es')+'</strong><div class="muted">Tienes decisiones pendientes en el vestuario.</div>';
+      card.insertBefore(alert,roomBtn);
+    }
+  };
+})();
+
 loadDB();
 })();
 </script>
