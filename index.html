@@ -6289,27 +6289,27 @@ loadDB=async function(){
       st.minutes=Math.max(st.minutes,M.minute);
 
       if(type==='gk'){
-        st.passes+=rnd(1,3);st.completed+=Math.min(st.passes,rnd(1,3));
+        const add=rnd(1,3);st.passes+=add;st.completed+=rnd(Math.max(0,add-1),add);
         if(Math.random()<.22){st.recoveries++;st.duels++;if(Math.random()<.72*quality)st.duelsWon++}
       }else if(type==='def'){
-        st.passes+=rnd(2,5);st.completed+=rnd(2,Math.max(2,st.passes));
+        const add=rnd(2,5);st.passes+=add;st.completed+=rnd(Math.max(1,add-2),add);
         if(Math.random()<.58){st.duels++;if(Math.random()<.62*quality)st.duelsWon++}
         if(Math.random()<.44){st.tackles++;if(Math.random()<.66*quality)st.tacklesWon++}
         if(Math.random()<.48)st.recoveries++;
         if(Math.random()<.33)st.clearances++;
       }else if(type==='mid'){
-        st.passes+=rnd(4,8);st.completed+=rnd(Math.max(2,st.passes-3),st.passes);
+        const add=rnd(4,8);st.passes+=add;st.completed+=rnd(Math.max(2,add-2),add);
         if(Math.random()<.48)st.recoveries++;
         if(Math.random()<.30){st.tackles++;if(Math.random()<.62*quality)st.tacklesWon++}
         if(Math.random()<.22)st.keyPasses++;
         if(Math.random()<.18){st.duels++;if(Math.random()<.58*quality)st.duelsWon++}
       }else if(type==='creator'){
-        st.passes+=rnd(3,6);st.completed+=rnd(Math.max(1,st.passes-3),st.passes);
+        const add=rnd(3,6);st.passes+=add;st.completed+=rnd(Math.max(1,add-2),add);
         if(Math.random()<.34)st.keyPasses++;
         if(Math.random()<.35){st.dribbles++;if(Math.random()<.60*quality)st.dribblesWon++}
         if(Math.random()<.25){st.duels++;if(Math.random()<.50*quality)st.duelsWon++}
       }else{
-        st.passes+=rnd(1,4);st.completed+=rnd(1,Math.max(1,st.passes));
+        const add=rnd(1,4);st.passes+=add;st.completed+=rnd(Math.max(0,add-2),add);
         if(Math.random()<.28){st.duels++;if(Math.random()<.52*quality)st.duelsWon++}
         if(Math.random()<.22){st.dribbles++;if(Math.random()<.55*quality)st.dribblesWon++}
         if(Math.random()<.16)st.keyPasses++;
@@ -6340,15 +6340,16 @@ loadDB=async function(){
   }
   function simulateOurShotDetailV114(M,beforeShots,beforeGoals){
     const shotsDelta=(M.myShots||0)-beforeShots;
-    if(shotsDelta<=0)return;
+    const goalsNow=M.home?M.hg:M.ag;
+    const nonGoalShots=Math.max(0,shotsDelta-Math.max(0,goalsNow-beforeGoals));
+    if(nonGoalShots<=0)return;
     const field=activePlayersV114(M).filter(p=>posTypeV114(p)!=='gk');
-    for(let i=0;i<shotsDelta;i++){
+    for(let i=0;i<nonGoalShots;i++){
       const weights=field.map(p=>({p,w:posTypeV114(p)==='att'?5:posTypeV114(p)==='creator'?3:posTypeV114(p)==='mid'?1.5:1}));
       let total=weights.reduce((a,x)=>a+x.w,0),r=Math.random()*total,shooter=weights[0]?.p;
       for(const x of weights){r-=x.w;if(r<=0){shooter=x.p;break}}
       if(!shooter)continue;
       const st=statsForV114(M,shooter.id);
-      if((M.home?M.hg:M.ag)>beforeGoals && st.goals>0)continue;
       st.shots++;
       if(Math.random()<.43)st.onTarget++;
     }
