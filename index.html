@@ -7256,8 +7256,27 @@ loadDB=async function(){
     S.clubAIV118.moves=S.clubAIV118.moves||[];
     return S.clubAIV118;
   }
+  let squadIndexV118=null;
+  function rebuildSquadIndexV118(){
+    const map=new Map();
+    for(const p of S.players||[]){
+      if(!p.club||p.parentClub||p.club==='Retirado')continue;
+      if(!map.has(p.club))map.set(p.club,[]);
+      map.get(p.club).push(p);
+    }
+    squadIndexV118=map;
+    return map;
+  }
   function squadV118(club){
-    return (S.players||[]).filter(p=>p.club===club&&!p.parentClub&&p.club!=='Retirado');
+    if(!squadIndexV118)rebuildSquadIndexV118();
+    return squadIndexV118.get(club)||[];
+  }
+  function invalidateSquadsV118(...clubs){
+    squadIndexV118=null;
+    for(const club of clubs){
+      const f=S.clubAIV118?.clubs?.[club];
+      if(f){f.lastPlan=null;f.needs=[]}
+    }
   }
   function financeV118(club){
     const w=aiV118();
@@ -7328,7 +7347,9 @@ loadDB=async function(){
     return rows;
   }
   function planClubV118(club){
-    const f=financeV118(club),needs=clubNeedsV118(club);
+    const f=financeV118(club);
+    if(f.lastPlan===S.date&&Array.isArray(f.needs)&&f.needs.length)return f.needs;
+    const needs=planClubV118(club);
     f.needs=needs;f.lastPlan=S.date;
     return needs;
   }
@@ -7340,8 +7361,8 @@ loadDB=async function(){
     if(p.age>=32)s-=5;
     return s;
   }
-  function managerFitV118(p,club){
-    const style=managerProfileV7(club)?.style||'';
+  function managerFitV118(p,club,styleOverride=null){
+    const style=styleOverride??(managerProfileV7(club)?.style||'');
     const g=groupOfV118(p);
     if(style==='Bloque bajo'&&['DEF','GK'].includes(g))return 5;
     if(style==='Transiciones'&&['WIDE','ST'].includes(g))return 5;
@@ -7363,13 +7384,14 @@ loadDB=async function(){
     if(p.wantsOut||p.transferListed)score+=24;
     return score;
   }
-  function candidateScoreV118(p,buyer,need){
-    const pf=window.clubBoardProfileV117?.(buyer)||{youth:3,stars:2,trading:3};
-    const buyerRating=clubRatingDB(buyer);
+  function candidateScoreV118(p,buyer,need,ctx=null){
+    const pf=ctx?.pf||(window.clubBoardProfileV117?.(buyer)||{youth:3,stars:2,trading:3});
+    const buyerRating=ctx?.rating??clubRatingDB(buyer);
+    const style=ctx?.style??(managerProfileV7(buyer)?.style||'');
     let s=0;
     s+=(p.overall-buyerRating)*2.3;
     s+=Math.max(0,(p.potential||p.overall)-p.overall)*.8;
-    s+=ageFitV118(p,pf)+managerFitV118(p,buyer);
+    s+=ageFitV118(p,pf)+managerFitV118(p,buyer,style);
     s+=need.score*.7;
     if(p.club===buyer||p.club==='Retirado')s-=100;
     if(p.club==='Agente libre')s+=6;
@@ -7382,14 +7404,23 @@ loadDB=async function(){
   }
   function targetPoolV118(buyer,need){
     const max=maxSpendV118(buyer),buyerR=clubRatingDB(buyer);
-    return (S.players||[]).filter(p=>{
-      if(!p.club||p.club===buyer||p.club==='Retirado'||p.parentClub||p.age>=34)return false;
-      if(groupOfV118(p)!==need.group)return false;
-      if(p.club===S.club&&S.pendingBids?.some(b=>b.playerId===p.id&&b.status==='pending'))return false;
+    const ctx={
+      rating:buyerR,
+      pf:window.clubBoardProfileV117?.(buyer)||{youth:3,stars:2,trading:3},
+      style:managerProfileV7(buyer)?.style||''
+    };
+    const pending=new Set((S.pendingBids||[]).filter(b=>b.status==='pending').map(b=>String(b.playerId)));
+    const rows=[];
+    for(const p of S.players||[]){
+      if(!p.club||p.club===buyer||p.club==='Retirado'||p.parentClub||p.age>=34)continue;
+      if(groupOfV118(p)!==need.group)continue;
+      if(p.club===S.club&&pending.has(String(p.id)))continue;
       const price=p.club==='Agente libre'?Math.max(0,(p.wage||0)*250):Math.max(100000,p.value||0)*1.18;
-      if(price>max*1.35)return false;
-      return p.overall>=buyerR-10;
-    }).sort((a,b)=>candidateScoreV118(b,buyer,need)-candidateScoreV118(a,buyer,need)).slice(0,35);
+      if(price>max*1.35||p.overall<buyerR-10)continue;
+      rows.push({p,score:candidateScoreV118(p,buyer,need,ctx)});
+    }
+    rows.sort((a,b)=>b.score-a.score);
+    return rows.slice(0,35).map(x=>x.p);
   }
   function feeForV118(p,buyerClub){
     if(p.club==='Agente libre')return 0;
@@ -7439,6 +7470,7 @@ loadDB=async function(){
       addNews('Fichaje planificado',buyer+' ficha a '+p.name+' desde '+from+' por '+euro(fee)+' para reforzar '+GROUP_LABEL_V118[need.group]+'.','mercado mundial');
       pushDayEventV7(S.date,{type:'world',text:'🤝 '+buyer+' ficha a '+p.name+' · '+GROUP_LABEL_V118[need.group]+'.'});
     }
+    invalidateSquadsV118(from,buyer);
     return true;
   }
 
@@ -7477,7 +7509,7 @@ loadDB=async function(){
     if(p.overall>=82&&pf.stars>=4)return false;
 
     const buyers=[...DB.clubs.keys()].filter(b=>b!==club&&b!==S.club&&maxSpendV118(b)>p.value*.75)
-      .map(b=>({b,need:clubNeedsV118(b).find(n=>n.group===over.group)}))
+      .map(b=>({b,need:planClubV118(b).find(n=>n.group===over.group)}))
       .filter(x=>x.need&&x.need.score>=4)
       .sort((a,b)=>b.need.score-a.need.score);
     if(!buyers.length)return false;
@@ -7492,8 +7524,9 @@ loadDB=async function(){
     const w=aiV118();
     if(w.lastWeekly===date)return;
     w.lastWeekly=date;seasonBudgetsV118();
+    rebuildSquadIndexV118();
 
-    const clubs=[...DB.clubs.keys()].filter(c=>c!==S.club&&squadV118(c).length>=15);
+    const clubs=[...squadIndexV118.keys()].filter(c=>c!==S.club&&DB.clubs.has(c)&&squadV118(c).length>=15);
     const urgency=clubs.map(club=>{
       const needs=planClubV118(club),f=financeV118(club),pf=window.clubBoardProfileV117?.(club)||{ambition:3};
       return{club,score:(needs[0]?.score||0)+pf.ambition*2+Math.min(12,(f.budget||0)/5000000)+Math.random()*8};
@@ -7543,6 +7576,8 @@ loadDB=async function(){
       if(b.status==='accepted'){
         ai.budget=Math.max(0,(ai.budget||0)-(b.fee||0));
         ai.spent=(ai.spent||0)+(b.fee||0);
+        ai.lastPlan=null;ai.needs=[];
+        invalidateSquadsV118(b.buyer);
         recordAIMoveV118('transfer',b.buyer,{id:b.playerId,name:b.player},b.fee,'Oferta aceptada por el usuario',S.club);
       }
       save();
@@ -7580,9 +7615,18 @@ loadDB=async function(){
     renderWorldV118Base();
     ensureV7State();
     const w=aiV118();
-    const clubs=[...DB.clubs.keys()].filter(c=>c!==S.club&&squadV118(c).length>=15)
-      .map(club=>({club,f:financeV118(club),needs:planClubV118(club)}))
-      .sort((a,b)=>(b.needs[0]?.score||0)-(a.needs[0]?.score||0)).slice(0,6);
+    rebuildSquadIndexV118();
+    let candidates=Object.entries(w.clubs)
+      .filter(([club,f])=>club!==S.club&&Array.isArray(f.needs)&&f.needs.length&&squadV118(club).length>=15)
+      .map(([club,f])=>({club,f,needs:f.needs}));
+    if(candidates.length<6){
+      const supplement=[...squadIndexV118.keys()].filter(c=>c!==S.club&&DB.clubs.has(c)&&squadV118(c).length>=15)
+        .sort((a,b)=>clubRatingDB(b)-clubRatingDB(a)).slice(0,24)
+        .map(club=>({club,f:financeV118(club),needs:planClubV118(club)}));
+      const seen=new Set(candidates.map(x=>x.club));
+      candidates.push(...supplement.filter(x=>!seen.has(x.club)));
+    }
+    const clubs=candidates.sort((a,b)=>(b.needs[0]?.score||0)-(a.needs[0]?.score||0)).slice(0,6);
     const moves=w.moves.slice(0,8);
 
     const card=document.createElement('div');
@@ -7628,7 +7672,7 @@ loadDB=async function(){
     return S.developmentV119;
   }
   function initPlayerV119(p){
-    if(!p)return;
+    if(!p||p.devInitV119)return;
     p.devXPV119=Number.isFinite(p.devXPV119)?p.devXPV119:0;
     p.devSeasonStartV119=Number.isFinite(p.devSeasonStartV119)?p.devSeasonStartV119:p.overall;
     p.devSeasonGainV119=Number.isFinite(p.devSeasonGainV119)?p.devSeasonGainV119:0;
@@ -7641,6 +7685,7 @@ loadDB=async function(){
     p.devHistoryV119=Array.isArray(p.devHistoryV119)?p.devHistoryV119:[];
     p.individualFocus=p.individualFocus||'General';
     syncProgressV119(p);
+    p.devInitV119=true;
   }
   function ageFactorV119(age){
     if(age<=18)return 1.5;
@@ -7731,10 +7776,11 @@ loadDB=async function(){
     syncProgressV119(p);
     return levels;
   }
-  function addDevXPV119(p,raw,source){
+  function addDevXPV119(p,raw,source,environmentOverride=null){
     initPlayerV119(p);
     if(p.club==='Retirado'||p.overall>=p.potential)return 0;
-    let mult=ageFactorV119(p.age)*potentialFactorV119(p)*personalityFactorV119(p)*moraleFactorV119(p)*formFactorV119(p)*environmentFactorV119(p);
+    const env=environmentOverride==null?environmentFactorV119(p):environmentOverride;
+    let mult=ageFactorV119(p.age)*potentialFactorV119(p)*personalityFactorV119(p)*moraleFactorV119(p)*formFactorV119(p)*env;
     if(p.injuredUntil&&p.injuredUntil>S.date)mult*=.20;
     const amount=Math.max(0,raw*mult);
     p.devXPV119+=amount;
@@ -7828,6 +7874,7 @@ loadDB=async function(){
       const top11=new Set(sorted.slice(0,11).map(p=>String(p.id)));
       const rotation=new Set(sorted.slice(11,18).map(p=>String(p.id)));
       const pf=window.clubBoardProfileV117?.(club)||{youth:3};
+      const env=ps.length?environmentFactorV119(ps[0]):1;
       for(const p of ps){
         initPlayerV119(p);
         if(p.age>31||p.overall>=p.potential)continue;
@@ -7839,7 +7886,7 @@ loadDB=async function(){
         const quality=top11.has(String(p.id))?6.7:6.3;
         p.devRatingSumV119+=virtual>=25?quality:0;
         let raw=(virtual/90)*1.15+.35;
-        addDevXPV119(p,raw,'ai');
+        addDevXPV119(p,raw,'ai',env);
       }
     }
   }
@@ -7936,8 +7983,11 @@ loadDB=async function(){
   ensureV7State=function(){
     ensureV119Base();
     if(!S)return;
-    devStateV119();
-    for(const p of S.players||[])initPlayerV119(p);
+    const st=devStateV119();
+    if(st.initializedPlayerCountV119!==(S.players||[]).length){
+      for(const p of S.players||[])initPlayerV119(p);
+      st.initializedPlayerCountV119=(S.players||[]).length;
+    }
   };
 
   function trendV119(p){
@@ -8009,6 +8059,44 @@ loadDB=async function(){
       save();
       render('development');
     });
+  };
+})();
+
+
+// ===== WORLD PERFORMANCE CACHE 10.20 =====
+// Evita volver a recorrer toda la base FC para ratings y presupuestos estáticos.
+(function(){
+  let cachedCount=-1;
+  let ratingCache=new Map();
+  let budgetCache=new Map();
+
+  function rebuildStaticClubCacheV120(){
+    if(cachedCount===DB.players.length)return;
+    const byClub=new Map(),values=new Map();
+    for(const p of DB.players){
+      if(!p.club)continue;
+      if(!byClub.has(p.club))byClub.set(p.club,[]);
+      byClub.get(p.club).push(p.overall||50);
+      values.set(p.club,(values.get(p.club)||0)+(p.value||0));
+    }
+    ratingCache=new Map();
+    budgetCache=new Map();
+    for(const [club,ratings] of byClub){
+      ratings.sort((a,b)=>b-a);
+      const top=ratings.slice(0,11);
+      ratingCache.set(club,top.length?top.reduce((a,x)=>a+x,0)/top.length:65);
+      budgetCache.set(club,Math.max(4e6,Math.round((values.get(club)||0)*.12)));
+    }
+    cachedCount=DB.players.length;
+  }
+
+  clubRatingDB=function(name){
+    rebuildStaticClubCacheV120();
+    return ratingCache.get(name)??65;
+  };
+  budgetFor=function(club){
+    rebuildStaticClubCacheV120();
+    return budgetCache.get(club)??4e6;
   };
 })();
 
