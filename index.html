@@ -2784,6 +2784,239 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== BOARD CHALLENGES 10.4 =====
+// Retos de directiva a corto plazo con progreso, recompensa y presión.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.board-challenges-v104{display:grid;gap:10px}'+
+    '.board-challenge-v104{padding:12px;border:1px solid var(--line);border-radius:13px;background:#0b1711}'+
+    '.board-challenge-v104.done{border-color:#2e6a43;background:#0d2116}'+
+    '.board-challenge-v104.failed{border-color:#763838;background:#241212}'+
+    '.board-progress-v104{height:9px;border-radius:999px;background:#17251e;overflow:hidden;margin:9px 0 6px}'+
+    '.board-progress-v104>i{display:block;height:100%;background:var(--accent);border-radius:999px}'+
+    '.board-meta-v104{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:6px}'+
+    '.board-tag-v104{font-size:10px;font-weight:900;border:1px solid var(--line);padding:3px 7px;border-radius:999px}'+
+    '.board-reward-v104{color:#8ee8a8}.board-penalty-v104{color:#ff9a9a}';
+  document.head.appendChild(style);
+
+  const ensureV104Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV104Base();
+    if(!S)return;
+    S.boardChallenges=S.boardChallenges||[];
+    S.boardChallengeHistory=S.boardChallengeHistory||[];
+    S.boardChallengeLastCheck=S.boardChallengeLastCheck||null;
+    S.boardChallengeCooldownUntil=S.boardChallengeCooldownUntil||null;
+  };
+
+  function activeChallengeV104(){
+    return (S.boardChallenges||[]).find(x=>x.status==='active')||null;
+  }
+
+  function challengePctV104(ch){
+    if(!ch)return 0;
+    return clamp(Math.round(((ch.progress||0)/Math.max(1,ch.target||1))*100),0,100);
+  }
+
+  function challengeLabelV104(ch){
+    if(!ch)return'';
+    if(ch.type==='points')return (ch.progress||0)+' / '+ch.target+' puntos';
+    if(ch.type==='wins')return (ch.progress||0)+' / '+ch.target+' victorias';
+    if(ch.type==='goals')return (ch.progress||0)+' / '+ch.target+' goles';
+    if(ch.type==='clean')return (ch.progress||0)+' / '+ch.target+' porterías a cero';
+    if(ch.type==='youthStarts')return (ch.progress||0)+' / '+ch.target+' partidos con joven titular';
+    if(ch.type==='academy')return (ch.progress||0)+' / '+ch.target+' canterano ascendido';
+    return (ch.progress||0)+' / '+(ch.target||1);
+  }
+
+  function finishChallengeV104(ch,success){
+    if(!ch||ch.status!=='active')return;
+    ch.status=success?'done':'failed';
+    ch.resolved=S.date;
+    if(success){
+      S.board=clamp(S.board+(ch.rewardBoard||5),0,100);
+      S.reputation=clamp(S.reputation+(ch.rewardRep||.8),1,100);
+      if(ch.rewardBudget)S.budget+=ch.rewardBudget;
+      addNews('Objetivo de directiva cumplido',ch.title+'. La directiva valora positivamente tu trabajo.','directiva');
+      pushDayEventV7(S.date,{type:'job',text:'✅ Objetivo cumplido: '+ch.title+'.'});
+    }else{
+      S.board=clamp(S.board-(ch.penaltyBoard||5),0,100);
+      S.reputation=clamp(S.reputation-(ch.penaltyRep||.4),1,100);
+      addNews('Objetivo de directiva fallado',ch.title+'. La confianza de la directiva baja.','directiva');
+      pushDayEventV7(S.date,{type:'job',text:'❌ Objetivo fallado: '+ch.title+'.'});
+    }
+    S.boardChallengeHistory.unshift({...ch});
+    S.boardChallengeHistory=S.boardChallengeHistory.slice(0,50);
+    S.boardChallengeCooldownUntil=isoAdd(S.date,success?28:21);
+    save();
+  }
+
+  function evaluateChallengeV104(ch){
+    if(!ch||ch.status!=='active')return;
+    if((ch.progress||0)>=(ch.target||1)){finishChallengeV104(ch,true);return}
+    if(ch.deadline&&S.date>ch.deadline){finishChallengeV104(ch,false);return}
+    if(ch.matchLimit&&ch.matches>=ch.matchLimit){finishChallengeV104(ch,false)}
+  }
+
+  function challengeTemplatesV104(){
+    const templates=[
+      {
+        type:'points',title:'Reacciona en liga',
+        desc:'Consigue 7 puntos en tus próximos 4 partidos oficiales.',
+        target:7,matchLimit:4,rewardBoard:6,rewardRep:1,rewardBudget:350000,penaltyBoard:5
+      },
+      {
+        type:'wins',title:'Encadena victorias',
+        desc:'Gana al menos 2 de tus próximos 4 partidos oficiales.',
+        target:2,matchLimit:4,rewardBoard:5,rewardRep:.8,rewardBudget:250000,penaltyBoard:4
+      },
+      {
+        type:'goals',title:'Más ambición ofensiva',
+        desc:'Marca 6 goles en tus próximos 4 partidos oficiales.',
+        target:6,matchLimit:4,rewardBoard:5,rewardRep:.7,rewardBudget:250000,penaltyBoard:4
+      },
+      {
+        type:'clean',title:'Hazte fuerte atrás',
+        desc:'Deja tu portería a cero 2 veces en los próximos 5 partidos oficiales.',
+        target:2,matchLimit:5,rewardBoard:6,rewardRep:.8,rewardBudget:300000,penaltyBoard:4
+      }
+    ];
+    const young=getClubPlayers(S.club).filter(p=>p.age<=21&&!p.parentClub);
+    if(young.length){
+      templates.push({
+        type:'youthStarts',title:'Apuesta por los jóvenes',
+        desc:'Alinea al menos a un jugador de 21 años o menos como titular en 2 de los próximos 5 partidos.',
+        target:2,matchLimit:5,rewardBoard:7,rewardRep:.8,rewardBudget:300000,penaltyBoard:4
+      });
+    }
+    if((S.youth||[]).length){
+      templates.push({
+        type:'academy',title:'Abre la puerta a la cantera',
+        desc:'Asciende un jugador de la cantera al primer equipo en los próximos 45 días.',
+        target:1,deadline:isoAdd(S.date,45),rewardBoard:6,rewardRep:.6,rewardBudget:200000,penaltyBoard:3
+      });
+    }
+    return templates;
+  }
+
+  function createChallengeV104(date,force=false){
+    if(activeChallengeV104())return;
+    if(S.boardChallengeCooldownUntil&&date<S.boardChallengeCooldownUntil)return;
+    if((S.record?.p||0)<2&&!force)return;
+    const rows=challengeTemplatesV104();
+    if(!rows.length)return;
+    const recent=(S.boardChallengeHistory||[]).slice(0,2).map(x=>x.type);
+    const pool=rows.filter(x=>!recent.includes(x.type));
+    const t=pick(pool.length?pool:rows);
+    if(!t)return;
+    const ch={
+      id:'BC'+Date.now()+Math.random().toString(36).slice(2,5),
+      created:date,status:'active',progress:0,matches:0,...t
+    };
+    S.boardChallenges.push(ch);
+    addNews('Nuevo reto de la directiva',ch.title+': '+ch.desc,'directiva');
+    pushDayEventV7(date,{type:'job',text:'🎯 Directiva: '+ch.title+'.'});
+    save();
+  }
+
+  function maybeCreateChallengeV104(date){
+    if(S.boardChallengeLastCheck===date)return;
+    S.boardChallengeLastCheck=date;
+    const dow=new Date(date+'T12:00:00Z').getUTCDay();
+    if(dow!==1)return;
+    if(activeChallengeV104())return;
+    if((S.record?.p||0)<2)return;
+    if(Math.random()<.55)createChallengeV104(date);
+  }
+
+  function updateChallengeAfterMatchV104(M,myGoals,oppGoals,f){
+    if(f.comp==='Pretemporada')return;
+    const ch=activeChallengeV104();
+    if(!ch)return;
+    ch.matches=(ch.matches||0)+1;
+    if(ch.type==='points')ch.progress=(ch.progress||0)+(myGoals>oppGoals?3:myGoals===oppGoals?1:0);
+    else if(ch.type==='wins'&&myGoals>oppGoals)ch.progress=(ch.progress||0)+1;
+    else if(ch.type==='goals')ch.progress=(ch.progress||0)+myGoals;
+    else if(ch.type==='clean'&&oppGoals===0)ch.progress=(ch.progress||0)+1;
+    else if(ch.type==='youthStarts'){
+      const youngStart=(M.startingXI||[]).map(id=>S.players.find(p=>p.id===id)).some(p=>p&&p.age<=21);
+      if(youngStart)ch.progress=(ch.progress||0)+1;
+    }
+    evaluateChallengeV104(ch);
+  }
+
+  const postMatchV104Base=postMatchV7;
+  postMatchV7=function(M,myGoals,oppGoals,f){
+    postMatchV104Base(M,myGoals,oppGoals,f);
+    updateChallengeAfterMatchV104(M,myGoals,oppGoals,f);
+  };
+
+  const promoteYouthV104Base=promoteYouth;
+  promoteYouth=function(id){
+    const ch=activeChallengeV104();
+    const targetAcademy=ch&&ch.type==='academy';
+    const before=S.players.length;
+    promoteYouthV104Base(id);
+    if(targetAcademy&&S.players.length>before&&ch.status==='active'){
+      ch.progress=(ch.progress||0)+1;
+      evaluateChallengeV104(ch);
+    }
+  };
+
+  const worldDayTickV104Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayTickV104Base(date);
+    ensureV7State();
+    const ch=activeChallengeV104();
+    if(ch)evaluateChallengeV104(ch);
+    maybeCreateChallengeV104(date);
+  };
+
+  function challengeHTMLV104(){
+    const ch=activeChallengeV104();
+    if(!ch)return '<div class="empty">La directiva no ha marcado ningún reto extra ahora mismo.</div>';
+    const pct=challengePctV104(ch);
+    const remaining=ch.matchLimit?Math.max(0,ch.matchLimit-(ch.matches||0))+' partidos restantes':
+      ch.deadline?Math.max(0,dateDiff(S.date,ch.deadline))+' días restantes':'En curso';
+    return '<div class="board-challenge-v104">'+
+      '<div class="row"><div><strong>🎯 '+esc(ch.title)+'</strong><div class="muted">'+esc(ch.desc)+'</div></div><span class="board-tag-v104">'+esc(remaining)+'</span></div>'+
+      '<div class="board-progress-v104"><i style="width:'+pct+'%"></i></div>'+
+      '<div class="row"><small>'+esc(challengeLabelV104(ch))+'</small><span class="spacer"></span><small>'+pct+'%</small></div>'+
+      '<div class="board-meta-v104"><span class="board-tag-v104 board-reward-v104">+ '+(ch.rewardBoard||5)+' confianza</span><span class="board-tag-v104 board-reward-v104">+'+euro(ch.rewardBudget||0)+'</span><span class="board-tag-v104 board-penalty-v104">Fallo: -'+(ch.penaltyBoard||5)+' confianza</span></div>'+
+    '</div>';
+  }
+
+  const renderHomeV104Base=renderHome;
+  renderHome=function(){
+    ensureV7State();
+    renderHomeV104Base();
+    const host=els.view.querySelector('.grid3');
+    if(!host)return;
+    const wrap=document.createElement('div');
+    wrap.className='card';
+    wrap.style.marginTop='14px';
+    wrap.innerHTML='<div class="row"><h3 style="margin:0">Retos de la directiva</h3><span class="spacer"></span><span class="badge">'+Math.round(S.board)+'% confianza</span></div><div style="margin-top:10px">'+challengeHTMLV104()+'</div>';
+    host.insertAdjacentElement('afterend',wrap);
+  };
+
+  const renderCareerV104Base=renderCareerV7;
+  renderCareerV7=function(){
+    ensureV7State();
+    renderCareerV104Base();
+    const hist=(S.boardChallengeHistory||[]).slice(0,8);
+    const card=document.createElement('div');
+    card.className='card';
+    card.style.marginTop='14px';
+    card.innerHTML='<h3>Historial de retos de directiva</h3>'+
+      (hist.length?'<div class="board-challenges-v104">'+hist.map(ch=>
+        '<div class="board-challenge-v104 '+(ch.status==='done'?'done':'failed')+'"><div class="row"><strong>'+(ch.status==='done'?'✅ ':'❌ ')+esc(ch.title)+'</strong><span class="spacer"></span><span class="board-tag-v104">'+esc(challengeLabelV104(ch))+'</span></div><div class="muted">'+dateStr(ch.resolved||ch.created)+'</div></div>'
+      ).join('')+'</div>':'<div class="empty">Todavía no has completado retos extra de la directiva.</div>');
+    els.view.appendChild(card);
+  };
+})();
+
 loadDB();
 })();
 </script>
