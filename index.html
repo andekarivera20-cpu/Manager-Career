@@ -7722,6 +7722,7 @@ loadDB=async function(){
     while(p.devXPV119>=devNeedV119(p)&&p.overall<p.potential&&levels<2){
       p.devXPV119-=devNeedV119(p);
       p.overall++;
+      p.hierarchy=hierarchyV7(p);
       levels++;
       revalueV119(p,1,0);
       recordGrowthV119(p,1,source);
@@ -7773,10 +7774,7 @@ loadDB=async function(){
     if(!isScheduledTrainingDay(date))return;
     for(const p of getClubPlayers(S.club)){
       initPlayerV119(p);
-      if(p.injuredUntil&&p.injuredUntil>date){
-        p.devInjuryDaysV119++;
-        continue;
-      }
+      if(p.injuredUntil&&p.injuredUntil>date)continue;
       p.devTrainingDaysV119++;
       const focus=p.individualFocus||'General';
       const focusBoost=focus==='General'?1:focus==='Nueva posición'?.75:1.10;
@@ -7891,6 +7889,7 @@ loadDB=async function(){
 
     if(decline){
       p.overall=Math.max(45,p.overall-decline);
+      p.hierarchy=hierarchyV7(p);
       revalueV119(p,-decline,0);
       recordGrowthV119(p,-decline,'age');
     }
