@@ -5428,6 +5428,262 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== INCOMING BID NEGOTIATION 10.12 =====
+// Las ofertas recibidas se pueden negociar: precio propio, contraofertas y un máximo de rondas.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.bid-neg-v112{padding:13px;border:1px solid #355943;border-radius:14px;background:#0c1a12}'+
+    '.bid-neg-grid-v112{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}'+
+    '.bid-neg-kpi-v112{padding:9px;border:1px solid var(--line);border-radius:10px;background:#08130e;text-align:center}'+
+    '.bid-neg-kpi-v112 small{display:block;color:var(--muted);font-size:9px}.bid-neg-kpi-v112 strong{font-size:16px}'+
+    '.bid-neg-input-v112{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;margin-top:9px}'+
+    '.bid-neg-quick-v112{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}'+
+    '.bid-history-v112{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}'+
+    '.bid-history-v112 div{padding:4px 0;font-size:10px;color:var(--muted)}'+
+    '.bid-state-v112{font-size:9px;font-weight:900;border:1px solid var(--line);padding:3px 6px;border-radius:999px;margin-left:5px}'+
+    '.bid-state-v112.counter{color:#ffd57c;border-color:#6a572c}.bid-state-v112.final{color:#ffadad;border-color:#693737}'+
+    '@media(max-width:650px){.bid-neg-grid-v112{grid-template-columns:1fr 1fr 1fr}.bid-neg-kpi-v112{padding:7px}.bid-neg-input-v112{grid-template-columns:1fr}.bid-neg-quick-v112 .btn{flex:1}}';
+  document.head.appendChild(style);
+
+  const ensureV112Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV112Base();
+    if(!S)return;
+    for(const b of S.pendingBids||[]){
+      b.negotiationRoundsV112=b.negotiationRoundsV112||0;
+      b.negotiationHistoryV112=Array.isArray(b.negotiationHistoryV112)?b.negotiationHistoryV112:[];
+      b.initialFeeV112=b.initialFeeV112||b.fee;
+      b.negotiationStateV112=b.negotiationStateV112||'offer';
+    }
+  };
+
+  function bidAndPlayerV112(id){
+    ensureV7State();
+    const b=(S.pendingBids||[]).find(x=>String(x.id)===String(id)&&x.status==='pending');
+    const p=b&&S.players.find(x=>String(x.id)===String(b.playerId));
+    return{b,p};
+  }
+
+  function buyerMaxV112(b,p){
+    if(b.negotiationMaxV112)return b.negotiationMaxV112;
+    const potentialPremium=clamp(((p.potential||p.overall||70)-(p.overall||70))*.008,0,.14);
+    const agePremium=p.age<=23?.08:p.age>=31?-.08:0;
+    const listedPenalty=(p.wantsOut||p.transferListed)?-.07:.03;
+    const importance=(S.lineup||[]).includes(p.id)?.05:0;
+    const random=.02+Math.random()*.18;
+    const factor=clamp(1.00+potentialPremium+agePremium+listedPenalty+importance+random,.90,1.43);
+    b.negotiationMaxV112=Math.max(
+      Math.round((b.initialFeeV112||b.fee)*1.04),
+      Math.round((p.value||b.fee||1000000)*factor)
+    );
+    return b.negotiationMaxV112;
+  }
+
+  function addBidHistV112(b,who,text,amount=null){
+    b.negotiationHistoryV112=b.negotiationHistoryV112||[];
+    b.negotiationHistoryV112.push({date:S.date,who,text,amount});
+    b.negotiationHistoryV112=b.negotiationHistoryV112.slice(-8);
+  }
+
+  function roundMoneyV112(n){
+    n=Math.max(0,Math.round(n||0));
+    const step=n>=20e6?500000:n>=5e6?250000:n>=1e6?100000:50000;
+    return Math.max(step,Math.round(n/step)*step);
+  }
+
+  function bidStatusHTMLV112(b){
+    if(b.negotiationStateV112==='counter')return '<span class="bid-state-v112 counter">CONTRAOFERTA</span>';
+    if(b.negotiationStateV112==='final')return '<span class="bid-state-v112 final">ÚLTIMA OFERTA</span>';
+    return '';
+  }
+
+  function openIncomingNegotiationV112(id){
+    const {b,p}=bidAndPlayerV112(id);
+    if(!b||!p)return;
+
+    const maxRounds=3,round=b.negotiationRoundsV112||0;
+    const current=b.fee||0,market=p.value||current;
+    const suggested=roundMoneyV112(Math.max(current*1.12,market*1.08));
+
+    els.matchBox.innerHTML=
+      '<div class="row"><div><h2 style="margin:0">💬 Negociar oferta</h2><div class="muted">'+esc(b.buyer)+' quiere fichar a '+esc(p.name)+'</div></div><span class="spacer"></span><button class="btn ghost" id="closeBidNegV112">Cerrar</button></div>'+
+      '<div class="bid-neg-v112">'+
+        '<div class="row"><div><strong>'+esc(p.name)+'</strong><div class="muted">'+esc(p.positions||'')+' · '+p.age+' años · OVR '+p.overall+'</div></div><span class="spacer"></span>'+bidStatusHTMLV112(b)+'</div>'+
+        '<div class="bid-neg-grid-v112">'+
+          '<div class="bid-neg-kpi-v112"><small>OFERTA ACTUAL</small><strong>'+euro(current)+'</strong></div>'+
+          '<div class="bid-neg-kpi-v112"><small>VALOR</small><strong>'+euro(market)+'</strong></div>'+
+          '<div class="bid-neg-kpi-v112"><small>RONDAS</small><strong>'+round+' / '+maxRounds+'</strong></div>'+
+        '</div>'+
+        '<label class="muted">Tu contraoferta</label>'+
+        '<div class="bid-neg-input-v112"><input id="bidAskV112" type="number" min="0" step="50000" value="'+suggested+'"><button class="btn primary" id="sendBidAskV112">Enviar precio</button></div>'+
+        '<div class="bid-neg-quick-v112">'+
+          '<button class="btn ghost quickBidV112" data-p="1.10">+10%</button>'+
+          '<button class="btn ghost quickBidV112" data-p="1.20">+20%</button>'+
+          '<button class="btn ghost quickBidV112" data-p="1.30">+30%</button>'+
+          '<button class="btn ghost quickBidV112" data-v="'+market+'">Valor de mercado</button>'+
+        '</div>'+
+        '<div class="muted" style="margin-top:8px">El comprador puede aceptar, rechazar o responder con otra cifra. A partir de la 3ª ronda ya no seguirá negociando.</div>'+
+        (b.negotiationHistoryV112?.length?'<div class="bid-history-v112"><strong>Negociación</strong>'+b.negotiationHistoryV112.slice().reverse().map(h=>'<div>'+esc(h.who)+': '+esc(h.text)+(h.amount!=null?' · '+euro(h.amount):'')+'</div>').join('')+'</div>':'')+
+      '</div>';
+
+    els.matchModal.classList.remove('hidden');
+    $('#closeBidNegV112').onclick=()=>els.matchModal.classList.add('hidden');
+
+    els.matchBox.querySelectorAll('.quickBidV112').forEach(btn=>btn.onclick=()=>{
+      const input=$('#bidAskV112');
+      if(btn.dataset.p)input.value=roundMoneyV112(current*Number(btn.dataset.p));
+      else input.value=roundMoneyV112(Number(btn.dataset.v||market));
+    });
+
+    $('#sendBidAskV112').onclick=()=>{
+      const ask=roundMoneyV112(+$('#bidAskV112').value||0);
+      if(ask<=0){toast('Introduce una cantidad válida');return}
+      negotiateIncomingBidV112(b.id,ask);
+    };
+  }
+  window.openIncomingNegotiationV112=openIncomingNegotiationV112;
+
+  function negotiateIncomingBidV112(id,ask){
+    const {b,p}=bidAndPlayerV112(id);
+    if(!b||!p)return;
+
+    const current=b.fee||0,max=buyerMaxV112(b,p);
+    b.negotiationRoundsV112=(b.negotiationRoundsV112||0)+1;
+    const round=b.negotiationRoundsV112;
+    addBidHistV112(b,S.club,'Contraoferta',ask);
+
+    // Pedir menos o igual que su oferta: aceptación inmediata.
+    if(ask<=current){
+      b.fee=ask;
+      b.negotiationStateV112='accepted';
+      addBidHistV112(b,b.buyer,'Acepta tu precio',ask);
+      addNews('Contraoferta aceptada',b.buyer+' acepta pagar '+euro(ask)+' por '+p.name+'.','mercado');
+      save();
+      els.matchModal.classList.add('hidden');
+      acceptIncomingBid(b.id);
+      return;
+    }
+
+    const ratio=ask/Math.max(1,max);
+    const wantsOut=!!(p.wantsOut||p.transferListed);
+    let acceptChance;
+    if(ask<=max){
+      acceptChance=clamp(.92-(ratio-.72)*.9+(wantsOut?-.07:.03),.42,.93);
+    }else{
+      acceptChance=0;
+    }
+
+    if(ask<=max&&Math.random()<acceptChance){
+      b.fee=ask;
+      b.negotiationStateV112='accepted';
+      addBidHistV112(b,b.buyer,'Acepta tu contraoferta',ask);
+      addNews('Contraoferta aceptada',b.buyer+' acepta tu petición de '+euro(ask)+' por '+p.name+'.','mercado');
+      save();
+      els.matchModal.classList.add('hidden');
+      acceptIncomingBid(b.id);
+      return;
+    }
+
+    // En la última ronda: aceptan o se levantan de la mesa.
+    if(round>=3){
+      if(ask<=max*1.035&&Math.random()<.58){
+        const finalFee=roundMoneyV112(Math.min(ask,max));
+        b.fee=finalFee;
+        b.negotiationStateV112='final';
+        addBidHistV112(b,b.buyer,'Mantiene una última oferta',finalFee);
+        addNews('Última oferta',b.buyer+' fija su última propuesta por '+p.name+': '+euro(finalFee)+'.','mercado');
+        save();
+        els.matchModal.classList.add('hidden');
+        render('transfers');
+      }else{
+        b.status='rejected';
+        b.negotiationStateV112='walked';
+        addBidHistV112(b,b.buyer,'Rompe la negociación');
+        if(wantsOut){
+          p.morale=clamp((p.morale||70)-4,20,100);
+          p.happinessReason='Molesto porque una salida no llegó a cerrarse';
+        }
+        addNews('Negociación rota',b.buyer+' se retira de la negociación por '+p.name+'.','mercado');
+        save();
+        els.matchModal.classList.add('hidden');
+        render('transfers');
+      }
+      return;
+    }
+
+    // Si la petición es excesiva, existe riesgo real de que el comprador se retire.
+    if(ask>max*1.18&&Math.random()<.62){
+      b.status='rejected';
+      b.negotiationStateV112='walked';
+      addBidHistV112(b,b.buyer,'Considera la petición demasiado alta y se retira');
+      if(wantsOut){
+        p.morale=clamp((p.morale||70)-3,20,100);
+        p.happinessReason='Frustrado porque la negociación de su salida se rompió';
+      }
+      addNews('El comprador se retira',b.buyer+' considera excesiva tu petición por '+p.name+' y abandona la operación.','mercado');
+      save();
+      els.matchModal.classList.add('hidden');
+      render('transfers');
+      return;
+    }
+
+    // Contraoferta del comprador.
+    const ceiling=Math.min(max,ask*.96);
+    const floor=Math.max(current*1.035,Math.min(max*.87,current*1.18));
+    let counter=roundMoneyV112(floor+(Math.max(floor,ceiling)-floor)*(.35+Math.random()*.4));
+    counter=Math.max(current,Math.min(counter,max));
+    b.fee=counter;
+    b.negotiationStateV112=round===2?'final':'counter';
+    addBidHistV112(b,b.buyer,round===2?'Presenta una oferta casi definitiva':'Responde con una contraoferta',counter);
+
+    if(wantsOut&&ask>max)p.morale=clamp((p.morale||70)-1,20,100);
+
+    addNews('Contraoferta recibida',b.buyer+' responde por '+p.name+': '+euro(counter)+'.','mercado');
+    save();
+    els.matchModal.classList.add('hidden');
+    render('transfers');
+    toast('El comprador responde con '+euro(counter));
+  }
+
+  const renderTransfersV112Base=renderTransfersV7;
+  renderTransfersV7=function(){
+    renderTransfersV112Base();
+    ensureV7State();
+
+    const card=[...els.view.querySelectorAll('.card')].find(x=>x.textContent.includes('Ofertas recibidas'));
+    if(!card)return;
+
+    card.querySelectorAll('.pending-bid').forEach(row=>{
+      const accept=row.querySelector('.bidAcceptV109');
+      const reject=row.querySelector('.bidRejectV109');
+      if(!accept||!reject||row.querySelector('.bidNegotiateV112'))return;
+
+      const id=accept.dataset.id;
+      const {b}=bidAndPlayerV112(id);
+      if(!b)return;
+
+      const neg=document.createElement('button');
+      neg.className='btn warn bidNegotiateV112';
+      neg.dataset.id=id;
+      neg.textContent='Negociar';
+
+      accept.insertAdjacentElement('afterend',neg);
+      neg.onclick=()=>openIncomingNegotiationV112(id);
+
+      const info=row.querySelector('.muted');
+      if(info){
+        let extra='';
+        if((b.negotiationRoundsV112||0)>0)extra=' · ronda '+b.negotiationRoundsV112+'/3';
+        if(b.negotiationStateV112==='counter')extra+=' · contraoferta';
+        if(b.negotiationStateV112==='final')extra+=' · última oferta';
+        info.innerHTML=esc(b.buyer)+' · '+euro(b.fee)+extra;
+      }
+    });
+  };
+})();
+
 loadDB();
 })();
 </script>
