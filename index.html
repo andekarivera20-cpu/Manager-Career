@@ -5684,6 +5684,549 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== MARKET 2.0 COMPLETE 10.13 =====
+// Negociaciones de varios días, competencia de otros clubes, variables reales y Deadline Day.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.market-live-v113{padding:11px;border:1px solid #604b27;border-radius:13px;background:linear-gradient(135deg,#251d0c,#0d1710);margin:0 0 9px}'+
+    '.market-live-v113.deadline{border-color:#9a622d;background:linear-gradient(135deg,#341d0a,#111810);box-shadow:0 0 24px #9a622d22}'+
+    '.deal-list-v113{display:grid;gap:7px;margin-top:8px}.deal-row-v113{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center;padding:9px;border:1px solid var(--line);border-radius:11px;background:#09150f}'+
+    '.deal-state-v113{display:inline-flex;margin-top:4px;padding:3px 7px;border-radius:999px;border:1px solid var(--line);font-size:9px;font-weight:900}'+
+    '.deal-state-v113.wait{color:#ffd67d;border-color:#6c582f}.deal-state-v113.action{color:#ffad82;border-color:#774531}.deal-state-v113.good{color:#8ee8a8;border-color:#315f42}.deal-state-v113.bad{color:#ff9b9b;border-color:#713939}'+
+    '.market-form-v113{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.market-form-v113 .field{min-width:0}'+
+    '.variable-box-v113{margin-top:10px;padding:10px;border:1px solid #31493b;border-radius:11px;background:#09150f}'+
+    '.competition-v113{margin-top:9px;padding:8px 10px;border-left:3px solid #a15f37;background:#21140e;border-radius:8px;font-size:11px}'+
+    '.deadline-clock-v113{font-size:11px;font-weight:900;color:#ffcd78}'+
+    '@media(max-width:700px){.market-form-v113{grid-template-columns:1fr 1fr}.deal-row-v113{grid-template-columns:1fr}.deal-row-v113>.row{justify-content:flex-start}.market-live-v113{padding:9px}}';
+  document.head.appendChild(style);
+
+  const ensureV113Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV113Base();
+    if(!S)return;
+    S.marketV113=S.marketV113||{};
+    S.marketV113.outgoing=Array.isArray(S.marketV113.outgoing)?S.marketV113.outgoing:[];
+    S.marketV113.obligations=Array.isArray(S.marketV113.obligations)?S.marketV113.obligations:[];
+    S.marketV113.deadlineGenerated=S.marketV113.deadlineGenerated||{};
+    S.marketV113.outgoing.forEach(d=>{
+      d.clubRounds=d.clubRounds||0;d.playerRounds=d.playerRounds||0;
+      d.history=Array.isArray(d.history)?d.history:[];
+    });
+  };
+
+  function deadlineDayV113(date=S.date){
+    const md=String(date||'').slice(5);
+    return md==='08-31'||md==='01-31';
+  }
+  function terminalDealV113(d){return['completed','failed','withdrawn','lost'].includes(d.status)}
+  function activeDealForV113(playerId){
+    return (S.marketV113.outgoing||[]).find(d=>String(d.playerId)===String(playerId)&&!terminalDealV113(d));
+  }
+  function reservedCashV113(exceptId=null){
+    return (S.marketV113.outgoing||[]).filter(d=>!terminalDealV113(d)&&d.id!==exceptId)
+      .reduce((a,d)=>a+(d.terms?.fee||0)+(d.terms?.signingBonus||0),0);
+  }
+  function moneyRoundV113(n){
+    n=Math.max(0,Math.round(n||0));
+    const step=n>=20e6?500000:n>=5e6?250000:n>=1e6?100000:50000;
+    return Math.max(n?step:0,Math.round(n/Math.max(1,step))*step);
+  }
+  function dealStatusV113(d){
+    if(d.status==='waiting_club')return['Esperando al club','wait'];
+    if(d.status==='club_counter')return['Contraoferta del club','action'];
+    if(d.status==='waiting_player')return['Decide el jugador','wait'];
+    if(d.status==='player_counter')return['El agente pide mejoras','action'];
+    if(d.status==='completed')return['Fichado','good'];
+    if(d.status==='lost')return['Eligió otro club','bad'];
+    if(d.status==='failed')return['Operación caída','bad'];
+    if(d.status==='withdrawn')return['Retirada','bad'];
+    return[d.status||'En curso','wait'];
+  }
+  function historyV113(d,who,text){
+    d.history=d.history||[];d.history.unshift({date:S.date,who,text});
+    d.history=d.history.slice(0,10);
+  }
+  function relationScoreV113(p){
+    return Number(S.managerRelations?.[String(p?.id)]?.score||0);
+  }
+  function agentV113(p){
+    try{return window.agentForPlayerV106?.(p)||null}catch(e){return null}
+  }
+  function agentScoreV113(p){return Number(agentV113(p)?.record?.score||0)}
+  function rememberAgentV113(p,delta,text){
+    const a=agentV113(p);if(!a?.record)return;
+    a.record.score=clamp((a.record.score||0)+delta,-100,100);
+    a.record.deals=(a.record.deals||0)+(delta>0?1:0);
+    a.record.memories=a.record.memories||[];
+    a.record.memories.unshift({date:S.date,text,delta});
+    a.record.memories=a.record.memories.slice(0,12);
+  }
+  function rememberPlayerMarketV113(p,delta,text,type='market'){
+    if(!p?.id)return;
+    S.managerRelations=S.managerRelations||{};
+    const k=String(p.id),r=S.managerRelations[k]||(S.managerRelations[k]={score:0,memories:[],clubs:[],firstMet:S.date,lastInteraction:S.date});
+    r.score=clamp((r.score||0)+delta,-100,100);r.memories=r.memories||[];r.clubs=r.clubs||[];
+    r.lastInteraction=S.date;
+    const m={date:S.date,type,text,club:S.club,delta};
+    r.memories.unshift(m);r.memories=r.memories.slice(0,16);
+    S.managerMemoryFeed=S.managerMemoryFeed||[];
+    S.managerMemoryFeed.unshift({playerId:p.id,player:p.name,...m,score:r.score});
+    S.managerMemoryFeed=S.managerMemoryFeed.slice(0,100);
+  }
+  function scoutTextV113(p){
+    const conf=p.club===S.club?100:clamp(Math.round(Number(p.marketScoutConfidence)||35),0,100);
+    const spread=conf>=96?0:conf<40?6:conf<70?4:conf<86?2:1;
+    const ovr=spread?clamp(p.overall-spread,40,99)+'–'+clamp(p.overall+spread,40,99):String(p.overall);
+    const potSpread=conf>=96?0:conf<40?9:conf<70?6:conf<86?3:2;
+    const pot=potSpread?clamp(p.potential-potSpread,40,99)+'–'+clamp(p.potential+potSpread,40,99):String(p.potential);
+    return{conf,ovr,pot};
+  }
+  function responseDaysV113(){
+    if(deadlineDayV113())return 0;
+    return rnd(1,3);
+  }
+  function roleValueV113(role){return role==='Clave'?1.7:role==='Importante'?.85:.1}
+
+  function openTransferNegotiationV113(id){
+    ensureV7State();
+    const p=S.players.find(x=>String(x.id)===String(id));
+    if(!p||p.club===S.club)return;
+
+    let d=activeDealForV113(p.id);
+    if(!isWindowOpen(S.date)&&!d){toast('Mercado cerrado');return}
+
+    if(d&&['waiting_club','waiting_player'].includes(d.status)){
+      const st=dealStatusV113(d);
+      els.matchBox.innerHTML=
+        '<div class="row"><div><h2 style="margin:0">⏳ Negociación en curso</h2><div class="muted">'+esc(p.name)+' · '+esc(p.club)+'</div></div><span class="spacer"></span><button class="btn ghost" id="closeNegV113">Cerrar</button></div>'+
+        '<div class="bid-neg-v112"><strong>'+esc(st[0])+'</strong><p class="muted">La propuesta ya está enviada. Respuesta prevista: '+dateStr(d.responseDate||S.date)+'.</p>'+
+        (d.competitor?'<div class="competition-v113">⚔️ <strong>'+esc(d.competitor.club)+'</strong> también está negociando por el jugador.</div>':'')+
+        '<button class="btn danger" id="withdrawDealV113">Retirar oferta</button></div>';
+      els.matchModal.classList.remove('hidden');
+      $('#closeNegV113').onclick=()=>els.matchModal.classList.add('hidden');
+      $('#withdrawDealV113').onclick=()=>withdrawDealV113(d.id);
+      return;
+    }
+
+    const free=p.club==='Agente libre',existing=d?.terms||{},scout=scoutTextV113(p),a=agentV113(p);
+    const fee=d?.status==='club_counter'?(d.counterFee||existing.fee||p.value):existing.fee??moneyRoundV113(p.value*(free?0:1.01));
+    const wage=d?.status==='player_counter'?(d.requestedWage||existing.wage||p.wage*1.15):existing.wage??Math.max(800,Math.round((p.wage||1000)*1.16));
+    const role=d?.requestedRole||existing.role||'Importante';
+    const mine=getClubPlayers(S.club).filter(x=>x.id!==p.id).sort((x,y)=>y.value-x.value).slice(0,25);
+    const relation=relationScoreV113(p),agentScore=agentScoreV113(p);
+    const lockedClub=d?.status==='player_counter';
+
+    els.matchBox.innerHTML=
+      '<div class="row"><div><h2 style="margin:0">'+(d?'Responder negociación':'Negociar por '+esc(p.name))+'</h2><div class="muted">'+esc(p.club)+' · '+esc(p.positions)+' · OVR '+esc(scout.ovr)+' · POT '+esc(scout.pot)+' · '+scout.conf+'% info</div></div><span class="spacer"></span><button class="btn ghost" id="closeNegV113">Cerrar</button></div>'+
+      (a?'<div class="world-rel-v106"><div class="world-rel-head-v106"><span class="world-rel-icon-v106">'+a.icon+'</span><div><strong>'+esc(a.name)+'</strong><div class="muted">Agente · relación '+(agentScore>0?'+':'')+agentScore+'</div></div><span class="spacer"></span><span class="badge">🧠 jugador '+(relation>0?'+':'')+relation+'</span></div></div>':'')+
+      (d?.competitor?'<div class="competition-v113">⚔️ <strong>'+esc(d.competitor.club)+'</strong> también está interesado. El jugador comparará los proyectos.</div>':'')+
+      '<div class="deal-type-grid">'+
+        '<label class="deal-option"><input type="radio" name="dealTypeV113" value="buy" '+((existing.type||'buy')==='buy'?'checked':'')+' '+(free||lockedClub?'disabled':'')+'> Traspaso</label>'+
+        '<label class="deal-option"><input type="radio" name="dealTypeV113" value="loan" '+(existing.type==='loan'?'checked':'')+' '+(free||lockedClub?'disabled':'')+'> Cesión</label>'+
+        '<label class="deal-option"><input type="radio" name="dealTypeV113" value="loanbuy" '+(existing.type==='loanbuy'?'checked':'')+' '+(free||lockedClub?'disabled':'')+'> Cesión + opción</label>'+
+      '</div>'+
+      '<div class="market-form-v113">'+
+        '<div class="field"><label>Precio fijo</label><input id="mFeeV113" type="number" min="0" step="100000" value="'+Math.round(fee||0)+'" '+(free||lockedClub?'disabled':'')+'></div>'+
+        '<div class="field"><label>Salario semanal</label><input id="mWageV113" type="number" min="100" step="100" value="'+Math.round(wage||0)+'"></div>'+
+        '<div class="field"><label>Prima de firma</label><input id="mSignV113" type="number" min="0" step="25000" value="'+Math.round(existing.signingBonus??wage*6)+'"></div>'+
+        '<div class="field"><label>Años</label><select id="mYearsV113">'+[2,3,4,5].map(y=>'<option '+(y===(existing.years||3)?'selected':'')+'>'+y+'</option>').join('')+'</select></div>'+
+        '<div class="field"><label>Rol prometido</label><select id="mRoleV113">'+['Rotación','Importante','Clave'].map(r=>'<option '+(r===role?'selected':'')+'>'+r+'</option>').join('')+'</select></div>'+
+        '<div class="field"><label>Cláusula</label><input id="mClauseV113" type="number" min="0" step="500000" value="'+Math.round(existing.clause??Math.max(p.value*1.8,fee*1.6))+'"></div>'+
+      '</div>'+
+      '<div class="variable-box-v113"><strong>📑 Variables del traspaso</strong><div class="market-form-v113">'+
+        '<div class="field"><label>Bonus tras 20 partidos</label><input id="mAppsV113" type="number" min="0" step="100000" value="'+Math.round(existing.appearanceBonus||0)+'" '+(lockedClub?'disabled':'')+'></div>'+
+        '<div class="field"><label>Bonus por ganar un título</label><input id="mTitleV113" type="number" min="0" step="100000" value="'+Math.round(existing.titleBonus||0)+'" '+(lockedClub?'disabled':'')+'></div>'+
+        '<div class="field"><label>% futura venta</label><input id="mSellV113" type="number" min="0" max="35" step="1" value="'+Math.round(existing.sellOn||0)+'" '+(lockedClub?'disabled':'')+'></div>'+
+      '</div><div class="muted">Las variables se pagarán de verdad si se cumplen.</div></div>'+
+      '<div class="grid2" style="margin-top:9px">'+
+        '<div class="field"><label>Jugador en intercambio</label><select id="mSwapV113" '+(lockedClub?'disabled':'')+'><option value="">Ninguno</option>'+mine.map(x=>'<option value="'+x.id+'" '+(String(existing.swapId||'')===String(x.id)?'selected':'')+'>'+esc(x.name)+' · '+euro(x.value)+'</option>').join('')+'</select></div>'+
+        '<div class="field"><label>Opción de compra</label><input id="mOptionV113" type="number" min="0" step="100000" value="'+Math.round(existing.option??p.value*1.05)+'"></div>'+
+      '</div>'+
+      (d?.status==='club_counter'?'<div class="competition-v113">🏢 '+esc(p.club)+' pide aproximadamente <strong>'+euro(d.counterFee||0)+'</strong>.</div>':'')+
+      (d?.status==='player_counter'?'<div class="competition-v113">💼 El agente pide mejorar las condiciones personales antes de decidir.</div>':'')+
+      '<button class="btn primary" id="sendMarketV113" style="margin-top:11px">'+(d?'Enviar nueva propuesta':'Enviar oferta')+'</button>'+
+      '<p class="muted">Normalmente la respuesta tarda 1–3 días. En Deadline Day todo se resuelve mucho más rápido.</p>';
+
+    els.matchModal.classList.remove('hidden');
+    $('#closeNegV113').onclick=()=>els.matchModal.classList.add('hidden');
+    $('#sendMarketV113').onclick=()=>submitDealV113(p,d);
+  }
+  openTransferNegotiation=openTransferNegotiationV113;
+
+  function readTermsV113(p,d){
+    const radio=els.matchBox.querySelector('input[name="dealTypeV113"]:checked');
+    const type=d?.status==='player_counter'?(d.terms?.type||'buy'):(radio?.value||(p.club==='Agente libre'?'buy':'buy'));
+    return{
+      type,
+      fee:p.club==='Agente libre'?0:Math.max(0,+($('#mFeeV113')?.value||d?.terms?.fee||0)),
+      wage:Math.max(100,+($('#mWageV113')?.value||0)),
+      signingBonus:Math.max(0,+($('#mSignV113')?.value||0)),
+      years:clamp(+($('#mYearsV113')?.value||3),2,5),
+      role:$('#mRoleV113')?.value||'Rotación',
+      clause:Math.max(0,+($('#mClauseV113')?.value||0)),
+      appearanceBonus:Math.max(0,+($('#mAppsV113')?.value||d?.terms?.appearanceBonus||0)),
+      titleBonus:Math.max(0,+($('#mTitleV113')?.value||d?.terms?.titleBonus||0)),
+      sellOn:clamp(+($('#mSellV113')?.value||d?.terms?.sellOn||0),0,35),
+      swapId:$('#mSwapV113')?.value||d?.terms?.swapId||'',
+      option:Math.max(0,+($('#mOptionV113')?.value||0))
+    };
+  }
+
+  function submitDealV113(p,d){
+    ensureV7State();
+    if(!isWindowOpen(S.date)){toast('El mercado está cerrado');return}
+    const terms=readTermsV113(p,d);
+    const upfront=terms.fee+terms.signingBonus;
+    const freeBudget=Math.max(0,S.budget-reservedCashV113(d?.id||null));
+    if(upfront>freeBudget){toast('Tus negociaciones abiertas dejan solo '+euro(freeBudget)+' disponibles');return}
+
+    if(!d){
+      d={
+        id:'OUT'+Date.now()+Math.random().toString(36).slice(2,6),playerId:p.id,player:p.name,
+        seller:p.club,created:S.date,status:p.club==='Agente libre'?'waiting_player':'waiting_club',
+        clubRounds:0,playerRounds:0,history:[],terms
+      };
+      S.marketV113.outgoing.unshift(d);
+      historyV113(d,S.club,'Envía la primera propuesta');
+    }else{
+      d.terms=terms;d.updated=S.date;
+      if(d.status==='club_counter'){d.clubRounds++;d.status='waiting_club';historyV113(d,S.club,'Responde a la contraoferta del club')}
+      else if(d.status==='player_counter'){d.playerRounds++;d.status='waiting_player';historyV113(d,S.club,'Mejora las condiciones personales')}
+    }
+
+    d.responseDate=deadlineDayV113()?S.date:isoAdd(S.date,responseDaysV113());
+    if(d.status==='waiting_player'&&!d.clubAcceptedDate)d.clubAcceptedDate=S.date;
+    addNews('Oferta enviada',S.club+' presenta una propuesta por '+p.name+'. Respuesta prevista: '+dateStr(d.responseDate)+'.','mercado');
+    pushDayEventV7(d.responseDate,{type:'transfer',text:'Respuesta de mercado pendiente por '+p.name+'.'});
+    save();
+    els.matchModal.classList.add('hidden');
+
+    if(deadlineDayV113()){
+      processSingleDealV113(d,S.date,true);
+      if(d.status==='waiting_player')processSingleDealV113(d,S.date,true);
+      save();
+    }
+    render('transfers');
+  }
+
+  function swapValueV113(d){
+    const p=S.players.find(x=>String(x.id)===String(d.terms?.swapId));
+    return p&&p.club===S.club?(p.value||0)*.65:0;
+  }
+  function packageValueV113(d,p){
+    const t=d.terms||{};
+    if(t.type==='loan'||t.type==='loanbuy')return (t.fee||0)+(t.option||0)*.18;
+    return (t.fee||0)+(t.appearanceBonus||0)*.48+(t.titleBonus||0)*.25+(p.value||0)*(t.sellOn||0)/100*.38+swapValueV113(d);
+  }
+  function sellerNeedV113(d,p){
+    if(d.terms?.type==='loan'||d.terms?.type==='loanbuy')return Math.max(100000,(p.value||0)*(.055+(p.overall>=80?.025:0)));
+    const wants=(p.wantsOut||p.transferListed)?-.08:0;
+    const age=p.age<=23?.08:p.age>=31?-.08:0;
+    const pot=clamp(((p.potential||p.overall)-(p.overall||0))*.006,0,.10);
+    return Math.max(100000,(p.value||0)*(1.00+wants+age+pot));
+  }
+  function competitorV113(d,p){
+    if(d.competitor||d.terms?.type!=='buy')return d.competitor||null;
+    const quality=(p.overall||0)>=80?.14:(p.potential||0)>=84?.10:0;
+    const chance=.18+quality+(deadlineDayV113()?.22:0)+((p.value||0)>30e6?.07:0);
+    if(Math.random()>chance)return null;
+    const seller=d.seller,base=clubRatingDB(S.club);
+    const pool=[...DB.clubs.keys()].filter(c=>c!==S.club&&c!==seller&&clubRatingDB(c)>=base-5&&clubRatingDB(c)<=base+10);
+    const club=pick(pool);if(!club)return null;
+    const wageNeed=Math.max(700,(p.wage||1000)*1.07);
+    d.competitor={club,wage:Math.round(wageNeed*(1.02+Math.random()*.25)),role:Math.random()<.48?'Clave':'Importante'};
+    addNews('Competencia por el fichaje',club+' entra en la puja por '+p.name+'.','mercado');
+    return d.competitor;
+  }
+
+  function processClubV113(d,p,date){
+    if(p.club!==d.seller&&p.club!=='Agente libre'){d.status='failed';d.outcome='El jugador ya no pertenece al club vendedor.';return}
+    const pack=packageValueV113(d,p),need=sellerNeedV113(d,p),ratio=pack/Math.max(1,need);
+    const accept=clamp(.12+(ratio-.72)*1.45,.04,.95);
+    if(ratio>=1.28||Math.random()<accept){
+      d.status='waiting_player';d.clubAcceptedDate=date;
+      d.responseDate=deadlineDayV113(date)?date:isoAdd(date,rnd(1,2));
+      historyV113(d,d.seller,'Acepta la estructura económica');
+      competitorV113(d,p);
+      addNews('Oferta aceptada por el club',d.seller+' acepta negociar la salida de '+p.name+'. Ahora decide el jugador.','mercado');
+      pushDayEventV7(d.responseDate,{type:'transfer',text:p.name+' responderá a tu propuesta contractual.'});
+      return;
+    }
+
+    if((d.clubRounds||0)>=2||ratio<.62){
+      d.status='failed';d.outcome=d.seller+' rechaza definitivamente la propuesta.';
+      historyV113(d,d.seller,'Rechaza la operación');
+      addNews('Oferta rechazada',d.outcome,'mercado');
+      return;
+    }
+
+    d.status='club_counter';d.clubRounds=(d.clubRounds||0)+1;
+    const baseFee=d.terms.fee||0;
+    const missing=Math.max(0,need-pack);
+    d.counterFee=moneyRoundV113(Math.max(baseFee*1.07,baseFee+missing*.72,need*.9-swapValueV113(d)));
+    historyV113(d,d.seller,'Contraoferta: pide '+euro(d.counterFee));
+    addNews('Contraoferta del club',d.seller+' pide cerca de '+euro(d.counterFee)+' por '+p.name+'.','mercado');
+    pushDayEventV7(date,{type:'transfer',text:d.seller+' contraoferta por '+p.name+'.'});
+  }
+
+  function playerAttractionV113(d,p){
+    const t=d.terms,wageNeed=Math.max(700,(p.wage||1000)*1.06);
+    return (S.reputation||45)*.055+(t.wage/wageNeed)*5.2+roleValueV113(t.role)+(t.signingBonus/Math.max(1,wageNeed*80))*1.3+
+      relationScoreV113(p)*.018+agentScoreV113(p)*.012+Math.random()*.9;
+  }
+  function rivalAttractionV113(d,p){
+    const c=d.competitor;if(!c)return-999;
+    const wageNeed=Math.max(700,(p.wage||1000)*1.06);
+    return clubRatingDB(c.club)*.07+(c.wage/wageNeed)*4.9+roleValueV113(c.role)+Math.random()*.9;
+  }
+
+  function playerToCompetitorV113(d,p){
+    const c=d.competitor,old=p.club;if(!c)return;
+    p.club=c.club;p.leagueId=DB.clubs.get(c.club)?.leagueId||p.leagueId;p.leagueName=EURO_LEAGUES[p.leagueId]?.name||p.leagueName;
+    p.wage=c.wage;p.contractUntil=(contractYear()+4)+'-06-30';p.squadRole=c.role;p.morale=78;
+    d.status='lost';d.outcome=p.name+' eligió fichar por '+c.club+'.';
+    historyV113(d,p.name,'Elige el proyecto de '+c.club);
+    rememberAgentV113(p,-1,'Su jugador eligió otro proyecto en una negociación competida');
+    addNews('Fichaje perdido',p.name+' rechaza tu propuesta y firma por '+c.club+'.','mercado');
+    S.shortlist=(S.shortlist||[]).filter(x=>x!==p.id);
+  }
+
+  function finalizeDealV113(d,p){
+    const t=d.terms,old=p.club,upfront=(t.fee||0)+(t.signingBonus||0);
+    if(S.budget<upfront){
+      d.status='failed';d.outcome='La operación se cayó porque ya no había presupuesto suficiente.';
+      addNews('Operación caída',d.outcome,'mercado');return;
+    }
+
+    if(t.type==='loan'||t.type==='loanbuy'){
+      p.parentClub=old;p.loanUntil=currentSeasonEndV7();p.optionToBuy=t.type==='loanbuy'?t.option:0;
+      p.club=S.club;p.leagueId=S.leagueId;p.leagueName=EURO_LEAGUES[S.leagueId]?.name||p.leagueName;
+      p.morale=76;p.squadRole=t.role;S.budget-=upfront;
+      S.transfers.push({date:S.date,type:'LOAN',player:p.name,from:old,to:S.club,fee:t.fee||0});
+      addNews('Cesión cerrada',p.name+' llega cedido desde '+old+(p.optionToBuy?' con opción de '+euro(p.optionToBuy):'')+'.','mercado');
+    }else{
+      p.club=S.club;p.leagueId=S.leagueId;p.leagueName=EURO_LEAGUES[S.leagueId]?.name||p.leagueName;
+      p.wage=t.wage;p.contractUntil=(contractYear()+t.years)+'-06-30';p.releaseClause=t.clause;p.squadRole=t.role;p.morale=80;
+      p.hierarchy=t.role==='Clave'?'Líder':t.role==='Importante'?'Importante':p.hierarchy;
+      S.budget-=upfront;
+      S.transfers.push({date:S.date,type:'IN',player:p.name,from:old,to:S.club,fee:t.fee||0,variables:{appearanceBonus:t.appearanceBonus,titleBonus:t.titleBonus,sellOn:t.sellOn}});
+      if(t.role==='Clave')addPromiseV7(p,'starter',120);
+
+      const swap=S.players.find(x=>String(x.id)===String(t.swapId));
+      if(swap&&swap.club===S.club){
+        swap.club=old;swap.leagueId=DB.clubs.get(old)?.leagueId||swap.leagueId;
+        S.lineup=S.lineup.filter(x=>x!==swap.id);S.bench=S.bench.filter(x=>x!==swap.id);
+        S.transfers.push({date:S.date,type:'OUT',player:swap.name,from:S.club,to:old,fee:0});
+      }
+
+      if(t.appearanceBonus||t.titleBonus||t.sellOn){
+        S.marketV113.obligations.push({
+          id:'OB'+Date.now()+Math.random().toString(36).slice(2,5),playerId:p.id,player:p.name,creditor:old,
+          appearanceBonus:t.appearanceBonus||0,titleBonus:t.titleBonus||0,sellOn:t.sellOn||0,
+          baseAppearances:p.appearances||0,baseTrophies:S.careerRecord?.trophies||0,
+          appearancePaid:false,titlePaid:false,sellOnPaid:false,created:S.date
+        });
+      }
+      addNews('Fichaje confirmado',p.name+' llega desde '+old+' por '+euro(t.fee||0)+(t.appearanceBonus||t.titleBonus||t.sellOn?' + variables':'')+'.','mercado');
+      if((t.fee||0)>=50000000)unlockAchievementV7('bigtransfer');
+    }
+
+    d.status='completed';d.completed=S.date;d.outcome=p.name+' es nuevo jugador de '+S.club+'.';
+    historyV113(d,p.name,'Acepta tu proyecto');
+    rememberAgentV113(p,6,'Cerraste una operación con uno de sus jugadores');
+    if(relationScoreV113(p)!==0)rememberPlayerMarketV113(p,relationScoreV113(p)>=0?8:4,'Volvisteis a trabajar juntos después de una negociación de mercado','reunion');
+    S.shortlist=(S.shortlist||[]).filter(x=>x!==p.id);
+    autoLineup();
+  }
+
+  function processPlayerV113(d,p,date){
+    competitorV113(d,p);
+    const ours=playerAttractionV113(d,p),rival=rivalAttractionV113(d,p);
+    const wageNeed=Math.max(700,(p.wage||1000)*1.06);
+    const minimum=7.1-(S.reputation||45)*.018-relationScoreV113(p)*.008-agentScoreV113(p)*.005;
+
+    if(d.competitor&&rival>ours+.35){playerToCompetitorV113(d,p);return}
+    if(ours>=minimum||Math.random()<clamp(.25+(ours-minimum)*.18,.08,.88)){
+      finalizeDealV113(d,p);return
+    }
+
+    if((d.playerRounds||0)>=1){
+      d.status='failed';d.outcome=p.name+' y su agente rechazan definitivamente tus condiciones.';
+      historyV113(d,p.name,'Rechaza el contrato');
+      rememberAgentV113(p,-2,'No se alcanzó un acuerdo contractual');
+      addNews('El jugador rechaza',d.outcome,'mercado');return
+    }
+
+    d.status='player_counter';d.playerRounds=(d.playerRounds||0)+1;
+    d.requestedWage=Math.round(Math.max(d.terms.wage,wageNeed)*(1.08+Math.random()*.10));
+    d.requestedRole=d.terms.role==='Rotación'?'Importante':d.terms.role;
+    historyV113(d,'Agente','Pide '+euro(d.requestedWage)+'/sem y un papel más importante');
+    addNews('El agente pide mejoras',p.name+' todavía no acepta. Su entorno pide mejores condiciones.','mercado');
+    pushDayEventV7(date,{type:'transfer',text:'El agente de '+p.name+' pide mejorar el contrato.'});
+  }
+
+  function processSingleDealV113(d,date,force=false){
+    if(!d||terminalDealV113(d)||['club_counter','player_counter'].includes(d.status))return;
+    if(!force&&d.responseDate&&d.responseDate>date)return;
+    const p=S.players.find(x=>String(x.id)===String(d.playerId));
+    if(!p){d.status='failed';d.outcome='El jugador ya no está disponible.';return}
+    if(!isWindowOpen(date)&&!deadlineDayV113(date)){
+      d.status='failed';d.outcome='El mercado cerró antes de completar la operación.';
+      addNews('Mercado cerrado',d.outcome+' ('+p.name+').','mercado');return
+    }
+    if(d.status==='waiting_club')processClubV113(d,p,date);
+    else if(d.status==='waiting_player')processPlayerV113(d,p,date);
+  }
+
+  function processDealsV113(date){
+    for(const d of S.marketV113.outgoing||[])processSingleDealV113(d,date,false);
+  }
+
+  function withdrawDealV113(id){
+    const d=(S.marketV113.outgoing||[]).find(x=>x.id===id);
+    if(!d||terminalDealV113(d))return;
+    d.status='withdrawn';d.outcome='Retiraste la propuesta.';
+    historyV113(d,S.club,'Retira la oferta');
+    addNews('Oferta retirada','Retiras tu propuesta por '+d.player+'.','mercado');
+    els.matchModal.classList.add('hidden');save();render('transfers');
+  }
+
+  function deadlineActivityV113(date){
+    if(!deadlineDayV113(date)||S.marketV113.deadlineGenerated[date])return;
+    S.marketV113.deadlineGenerated[date]=true;
+    const current=getClubPlayers(S.club).filter(p=>!p.parentClub&&!isUnavailable(p)&&p.value>500000);
+    const n=Math.min(current.length,rnd(1,3));
+    const used=new Set();
+    for(let i=0;i<n;i++){
+      const pool=current.filter(p=>!used.has(p.id)&&!S.pendingBids.some(b=>b.playerId===p.id&&b.status==='pending'));
+      const p=pick(pool);if(!p)break;used.add(p.id);
+      const buyers=[...DB.clubs.keys()].filter(c=>c!==S.club&&clubRatingDB(c)>=clubRatingDB(S.club)-9);
+      const buyer=pick(buyers);if(!buyer)continue;
+      const fee=moneyRoundV113((p.value||500000)*(.94+Math.random()*.42));
+      S.pendingBids.push({id:'DDL'+date+'-'+p.id,playerId:p.id,player:p.name,buyer,fee,date,status:'pending'});
+      pushDayEventV7(date,{type:'bid',text:'Deadline Day: '+buyer+' ofrece '+euro(fee)+' por '+p.name+'.'});
+    }
+    pushDayEventV7(date,{type:'market',text:'⏰ DEADLINE DAY · últimas horas del mercado.'});
+    addNews('Deadline Day','Último día de mercado: aumenta la actividad y las negociaciones se resuelven al momento.','mercado');
+  }
+
+  const worldDayV113Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV113Base(date);
+    ensureV7State();
+    deadlineActivityV113(date);
+    processDealsV113(date);
+  };
+
+  const iconV113Base=eventIcon;
+  eventIcon=function(t){return t==='transfer'?'🤝':iconV113Base(t)};
+  const stopsV113Base=eventStops;
+  eventStops=function(e){return e?.type==='transfer'?true:stopsV113Base(e)};
+
+  function obligationPaymentV113(ob,kind,amount,text){
+    if(!amount)return;
+    S.budget=Math.max(0,S.budget-amount);
+    ob[kind+'Paid']=true;ob[kind+'PaidDate']=S.date;
+    addNews('Variable de traspaso',text+' Pagas '+euro(amount)+' a '+ob.creditor+'.','mercado');
+  }
+
+  function processObligationsV113(){
+    for(const ob of S.marketV113.obligations||[]){
+      const p=S.players.find(x=>String(x.id)===String(ob.playerId));
+      if(!p)continue;
+      if(!ob.appearancePaid&&ob.appearanceBonus>0&&p.club===S.club&&(p.appearances||0)-(ob.baseAppearances||0)>=20)
+        obligationPaymentV113(ob,'appearance',ob.appearanceBonus,p.name+' alcanza 20 partidos contigo.');
+      if(!ob.titlePaid&&ob.titleBonus>0&&p.club===S.club&&(S.careerRecord?.trophies||0)>(ob.baseTrophies||0))
+        obligationPaymentV113(ob,'title',ob.titleBonus,p.name+' cumple la variable ligada a ganar un título.');
+    }
+  }
+
+  const postMatchV113Base=postMatchV7;
+  postMatchV7=function(M,myGoals,oppGoals,f){
+    postMatchV113Base(M,myGoals,oppGoals,f);
+    if(f.comp!=='Pretemporada')processObligationsV113();
+  };
+
+  const acceptBidV113Base=acceptIncomingBid;
+  acceptIncomingBid=function(id){
+    const b=S.pendingBids.find(x=>String(x.id)===String(id)&&x.status==='pending');
+    const p=b&&S.players.find(x=>String(x.id)===String(b.playerId));
+    const obs=p?(S.marketV113?.obligations||[]).filter(o=>String(o.playerId)===String(p.id)&&o.sellOn>0&&!o.sellOnPaid):[];
+    acceptBidV113Base(id);
+    if(b?.status==='accepted'&&p){
+      for(const ob of obs){
+        const cut=moneyRoundV113((b.fee||0)*(ob.sellOn||0)/100);
+        if(cut>0){
+          S.budget=Math.max(0,S.budget-cut);ob.sellOnPaid=true;ob.sellOnPaidDate=S.date;
+          addNews('Porcentaje de futura venta',ob.creditor+' recibe '+euro(cut)+' ('+ob.sellOn+'%) por la venta de '+p.name+'.','mercado');
+        }
+      }
+      save();
+    }
+  };
+
+  function outgoingHTMLV113(){
+    const active=(S.marketV113.outgoing||[]).filter(d=>!terminalDealV113(d));
+    const recent=(S.marketV113.outgoing||[]).filter(terminalDealV113).slice(0,4);
+    if(!active.length&&!recent.length)return'';
+    return '<div class="card market-out-v113" style="margin-bottom:9px"><div class="row"><h3 style="margin:0">🤝 Tus negociaciones</h3><span class="spacer"></span><span class="badge">'+active.length+' activas</span></div>'+
+      '<div class="deal-list-v113">'+[...active,...recent].map(d=>{
+        const st=dealStatusV113(d),p=S.players.find(x=>String(x.id)===String(d.playerId));
+        const actionable=['club_counter','player_counter'].includes(d.status);
+        return '<div class="deal-row-v113"><div><strong>'+esc(d.player)+'</strong> · '+esc(d.seller||p?.club||'')+
+          '<div class="muted">'+euro(d.terms?.fee||0)+' fijo'+(d.competitor?' · ⚔️ '+esc(d.competitor.club):'')+(d.responseDate&&!actionable&&!terminalDealV113(d)?' · respuesta '+dateStr(d.responseDate):'')+'</div>'+
+          '<span class="deal-state-v113 '+st[1]+'">'+esc(st[0])+'</span></div><div class="row">'+
+          (actionable?'<button class="btn warn dealRespondV113" data-id="'+esc(String(d.playerId))+'">Responder</button>':'')+
+          (!terminalDealV113(d)&&!actionable?'<button class="btn ghost dealViewV113" data-id="'+esc(String(d.playerId))+'">Ver</button>':'')+
+          (!terminalDealV113(d)?'<button class="btn danger dealWithdrawV113" data-deal="'+d.id+'">Retirar</button>':'')+
+          '</div></div>';
+      }).join('')+'</div></div>';
+  }
+
+  const renderTransfersV113Base=renderTransfersV7;
+  renderTransfersV7=function(){
+    renderTransfersV113Base();
+    ensureV7State();
+
+    const tabs=els.view.querySelector('.transfer-tabs');
+    if(!tabs)return;
+    const old=els.view.querySelector('.market-live-v113');if(old)old.remove();
+    const oldDeals=els.view.querySelector('.market-out-v113');if(oldDeals)oldDeals.remove();
+
+    const banner=document.createElement('div');
+    banner.className='market-live-v113 '+(deadlineDayV113()?'deadline':'');
+    const active=(S.marketV113.outgoing||[]).filter(d=>!terminalDealV113(d)).length;
+    banner.innerHTML=deadlineDayV113()
+      ?'<div class="row"><strong>⏰ DEADLINE DAY</strong><span class="spacer"></span><span class="deadline-clock-v113">ÚLTIMO DÍA</span></div><div class="muted">Más actividad, más competencia y respuestas inmediatas. Tienes '+active+' negociación'+(active===1?'':'es')+' activa'+(active===1?'':'s')+'.</div>'
+      :'<div class="row"><strong>Mercado en vivo</strong><span class="spacer"></span><span class="badge">'+active+' negociaciones</span></div><div class="muted">Los clubes y jugadores tardan días en responder. Otros equipos pueden entrar en la puja.</div>';
+    tabs.insertAdjacentElement('afterend',banner);
+
+    const html=outgoingHTMLV113();
+    if(html)banner.insertAdjacentHTML('afterend',html);
+
+    els.view.querySelectorAll('.dealRespondV113,.dealViewV113').forEach(b=>b.onclick=()=>openTransferNegotiationV113(b.dataset.id));
+    els.view.querySelectorAll('.dealWithdrawV113').forEach(b=>b.onclick=()=>withdrawDealV113(b.dataset.deal));
+  };
+
+  const renderHomeV113Base=renderHome;
+  renderHome=function(){
+    renderHomeV113Base();
+    ensureV7State();
+    const action=(S.marketV113.outgoing||[]).filter(d=>['club_counter','player_counter'].includes(d.status));
+    if(!action.length)return;
+    let host=els.view.querySelector('.home-alerts-v109');
+    if(!host){
+      host=document.createElement('div');host.className='home-alerts-v109';
+      (els.view.querySelector('.home-min-v109')||els.view).appendChild(host);
+    }
+    const b=document.createElement('button');
+    b.className='home-alert-v109';b.textContent='🤝 '+action.length+' negociación'+(action.length===1?'':'es')+' requiere'+(action.length===1?'':'n')+' respuesta';
+    b.onclick=()=>render('transfers');host.prepend(b);
+  };
+})();
+
 loadDB();
 })();
 </script>
