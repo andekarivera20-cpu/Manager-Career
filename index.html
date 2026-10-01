@@ -6622,6 +6622,8 @@ loadDB=async function(){
     'Julian Nagelsmann','Thomas Tuchel','Simone Inzaghi','Hansi Flick'
   ]);
 
+  const originalManagerLookupV116=window.managerForClubV96;
+
   function managerIdV116(name){return'm116_'+hashV7(String(name||'').toLowerCase().trim())}
   function clubPrestigeV116(club){
     const lid=DB.clubs.get(club)?.leagueId;
@@ -6637,7 +6639,7 @@ loadDB=async function(){
     return V7_STYLES[hashV7(name)%V7_STYLES.length];
   }
   function fallbackManagerNameV116(club){
-    const mapped=window.managerForClubV96?.(club);
+    const mapped=originalManagerLookupV116?.(club);
     if(mapped&&mapped!=='Entrenador actual')return mapped;
     return 'Técnico de '+club;
   }
@@ -6753,6 +6755,12 @@ loadDB=async function(){
     w.assignments[club]=rec.id;return rec;
   }
   window.managerForClubV116=club=>managerAtClubV116(club)?.name||'Entrenador actual';
+  // Compatibilidad: los sistemas antiguos de rivalidades/agentes consultaban V96.
+  // Con una partida activa deben recibir la asignación viva; en el menú inicial, la base real original.
+  window.managerForClubV96=function(club){
+    if(!S)return originalManagerLookupV116?.(club)||'Entrenador actual';
+    return managerAtClubV116(club)?.name||'Entrenador actual';
+  };
 
   const managerProfileV116Base=managerProfileV7;
   managerProfileV7=function(club){
