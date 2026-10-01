@@ -1391,6 +1391,7 @@ loadDB=async function(){
 
   window.stopAutoV95=stopAutoV95;
   window.startAutoV95=startAutoV95;
+  window.prepareMinuteV95=prepareMinuteV95;
 
   const openMatchV95Base=openMatch;
   openMatch=function(f){
@@ -4178,6 +4179,23 @@ loadDB=async function(){
     if(!M.done&&createDecisionV107(M))renderMatch(M);
   };
 
+  function fastForwardV107(M,target){
+    if(!M||M.done||M.pendingDecisionV107)return;
+    if(typeof window.stopAutoV95==='function')window.stopAutoV95(M);
+    M.autoRunningV95=false;
+    if(M.minute===45&&target>45)M.secondHalfV95=true;
+    let guard=0;
+    while(!M.done&&M.minute<target&&!M.pendingDecisionV107&&guard++<40){
+      const nextDue=(M.matchDecisionMinutesV107||[]).find(x=>x>M.minute&&!(M.matchDecisionUsedMinutesV107||[]).includes(x));
+      const stopAt=nextDue&&nextDue<=target?nextDue:target;
+      const jump=Math.min(5,Math.max(1,stopAt-M.minute));
+      if(typeof window.prepareMinuteV95==='function')window.prepareMinuteV95(M);
+      advanceMatch(M,jump);
+      if(M.pendingDecisionV107)break;
+    }
+    if(!M.done&&!M.pendingDecisionV107)renderMatch(M);
+  }
+
   const renderMatchV107Base=renderMatch;
   renderMatch=function(M){
     currentMatchV107=M;
@@ -4189,7 +4207,21 @@ loadDB=async function(){
       renderMatchV107Base(M);
     }
     const d=M.pendingDecisionV107;
-    if(!d)return;
+    if(!d){
+      const halfBtn=els.matchBox.querySelector('#toHT');
+      const endBtn=els.matchBox.querySelector('#finishMatch');
+      if(halfBtn){
+        halfBtn.textContent='⏩ Ir al descanso';
+        halfBtn.disabled=M.done||M.minute>=45;
+        halfBtn.onclick=()=>fastForwardV107(M,45);
+      }
+      if(endBtn){
+        endBtn.textContent='⏭ Finalizar partido';
+        endBtn.disabled=M.done;
+        endBtn.onclick=()=>fastForwardV107(M,90);
+      }
+      return;
+    }
 
     if(typeof window.stopAutoV95==='function')window.stopAutoV95(M);
     M.autoRunningV95=false;
