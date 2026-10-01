@@ -43,7 +43,16 @@
       <div class="data-note">Carga ligera: los equipos aparecen primero y la base FC27 optimizada se carga solo al empezar o continuar una carrera.</div>
     </div>
     <div class="setup-grid">
-      <div class="field"><label>Entrenador del equipo</label><div id="coachAutoV96" class="auto-coach-v96">Elige un equipo</div><select id="coachSelect" class="hidden" aria-hidden="true"></select><input id="coachCustom" class="hidden" aria-hidden="true"></div>
+      <div class="field manager-start-v115">
+        <label>¿Quién quieres ser?</label>
+        <div class="manager-mode-v115">
+          <label class="manager-mode-card-v115 active"><input type="radio" name="managerStartModeV115" value="custom" checked> <span>👤 <strong>Crear entrenador</strong><small>Usa tu propio nombre</small></span></label>
+          <label class="manager-mode-card-v115"><input type="radio" name="managerStartModeV115" value="real"> <span>👔 <strong>Entrenador real</strong><small>Solo el técnico de ese club</small></span></label>
+        </div>
+        <div id="customManagerPanelV115"><input id="managerNameV115" type="text" maxlength="32" placeholder="Escribe tu nombre"></div>
+        <div id="realManagerPanelV115" class="hidden"><div id="coachAutoV96" class="auto-coach-v96">Elige un equipo</div><small class="muted">El entrenador real depende del equipo elegido.</small></div>
+        <select id="coachSelect" class="hidden" aria-hidden="true"></select><input id="coachCustom" class="hidden" aria-hidden="true">
+      </div>
       <div class="field"><label>País</label><select id="countrySelect" disabled></select></div>
       <div class="field"><label>Liga</label><select id="leagueSelect" disabled></select></div>
       <div class="field"><label>Equipo</label><select id="teamSelect" disabled></select></div>
@@ -875,8 +884,24 @@ async function cleanContinue(){
 els.start.addEventListener('click',async e=>{
   e.preventDefault();e.stopImmediatePropagation();
   const club=els.team.value,lid=els.league.value;if(!club||!lid)return;
+  const mode=document.querySelector('input[name="managerStartModeV115"]:checked')?.value||'custom';
+  const typed=(document.getElementById('managerNameV115')?.value||'').trim();
+  if(mode==='custom'&&!typed){toast('Escribe el nombre de tu entrenador');document.getElementById('managerNameV115')?.focus();return}
   const old=els.start.textContent;els.start.disabled=true;els.start.textContent='Preparando carrera…';
-  try{await cleanLoadPlayers();const real=matchClub(club,lid);const coach=window.managerForClubV96?window.managerForClubV96(real):'Entrenador actual';startCareer(real,lid,coach);localStorage.setItem(CLEAN_HAS_KEY,'1')}
+  try{
+    await cleanLoadPlayers();
+    const real=matchClub(club,lid);
+    const realCoach=window.managerForClubV96?window.managerForClubV96(real):'Entrenador actual';
+    if(mode==='real'&&(!realCoach||realCoach==='Entrenador actual')){toast('No tenemos registrado el entrenador real de este club');els.start.disabled=false;els.start.textContent=old;return}
+    const coach=mode==='real'?realCoach:typed;
+    startCareer(real,lid,coach);
+    S.managerStartModeV115=mode;
+    S.managerIdentityV115={type:mode,name:coach,startClub:real,since:S.date};
+    S.originalClubManagerV115=realCoach;
+    S.displacedManagerV115=mode==='custom'?realCoach:null;
+    save();
+    localStorage.setItem(CLEAN_HAS_KEY,'1');
+  }
   catch(err){console.error(err);els.start.disabled=false;els.start.textContent=old;els.loadText.textContent='No se pudo cargar FC27 optimizada. Recarga la página.'}
 },true);
 els.continueBtn.addEventListener('click',e=>{e.preventDefault();e.stopImmediatePropagation();cleanContinue()},true);
@@ -6494,6 +6519,86 @@ loadDB=async function(){
     const cont=[...els.matchBox.querySelectorAll('button')].find(b=>b.textContent==='Continuar');
     if(cont)cont.insertAdjacentElement('beforebegin',box);else els.matchBox.appendChild(box);
   };
+})();
+
+
+// ===== MANAGER IDENTITY START 10.15 =====
+// Al iniciar: entrenador propio o entrenador real del club. Los demás técnicos conservan su equipo.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.manager-start-v115{grid-column:span 2}'+
+    '.manager-mode-v115{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px}'+
+    '.manager-mode-card-v115{display:flex;gap:8px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:11px;background:#09150f;cursor:pointer}'+
+    '.manager-mode-card-v115.active{border-color:#4d825f;background:#102419}'+
+    '.manager-mode-card-v115 input{width:auto;min-height:0;margin:0}'+
+    '.manager-mode-card-v115 span{display:flex;gap:2px;flex-direction:column;font-size:12px}'+
+    '.manager-mode-card-v115 small{font-size:9px;color:var(--muted);font-weight:500}'+
+    '#managerNameV115{width:100%}'+
+    '.manager-rule-v115{margin-top:6px;font-size:10px;color:var(--muted)}'+
+    '@media(max-width:760px){.manager-start-v115{grid-column:1/-1}.manager-mode-v115{grid-template-columns:1fr}.manager-mode-card-v115{padding:8px}}';
+  document.head.appendChild(style);
+
+  function realCoachV115(){
+    const club=els.team?.value||'';
+    return club&&window.managerForClubV96?window.managerForClubV96(club):'Entrenador actual';
+  }
+  function selectedModeV115(){
+    return document.querySelector('input[name="managerStartModeV115"]:checked')?.value||'custom';
+  }
+  function refreshManagerStartV115(){
+    const mode=selectedModeV115();
+    const custom=document.getElementById('customManagerPanelV115');
+    const real=document.getElementById('realManagerPanelV115');
+    if(custom)custom.classList.toggle('hidden',mode!=='custom');
+    if(real)real.classList.toggle('hidden',mode!=='real');
+
+    document.querySelectorAll('.manager-mode-card-v115').forEach(x=>{
+      x.classList.toggle('active',x.querySelector('input')?.checked);
+    });
+
+    const team=els.team?.value||'';
+    const name=(document.getElementById('managerNameV115')?.value||'').trim();
+    const realCoach=realCoachV115();
+    const valid=!!team&&(mode==='custom'?!!name:!!realCoach&&realCoach!=='Entrenador actual');
+    if(els.start)els.start.disabled=!valid;
+  }
+
+  document.querySelectorAll('input[name="managerStartModeV115"]').forEach(r=>r.addEventListener('change',refreshManagerStartV115));
+  document.getElementById('managerNameV115')?.addEventListener('input',refreshManagerStartV115);
+  els.team?.addEventListener('change',()=>setTimeout(refreshManagerStartV115,0));
+
+  const previewBaseV115=updateTeamPreview;
+  updateTeamPreview=function(){
+    previewBaseV115();
+    refreshManagerStartV115();
+  };
+
+  const managerProfileBaseV115=managerProfileV7;
+  managerProfileV7=function(club){
+    const p=managerProfileBaseV115(club);
+    if(S&&club===S.club&&S.coach)return{...p,name:S.coach};
+    return p;
+  };
+
+  const ensureV115Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV115Base();
+    if(!S)return;
+    S.managerStartModeV115=S.managerStartModeV115||'legacy';
+    S.managerIdentityV115=S.managerIdentityV115||{type:S.managerStartModeV115,name:S.coach,startClub:S.managerClubs?.[0]||S.club,since:S.history?.[0]?.date||S.date};
+  };
+
+  // Explain the restriction directly in the setup without another menu.
+  const setup=document.getElementById('customManagerPanelV115');
+  if(setup&&!document.querySelector('.manager-rule-v115')){
+    const note=document.createElement('div');
+    note.className='manager-rule-v115';
+    note.textContent='Si eliges un entrenador real, no puedes moverlo a otro club al empezar la carrera.';
+    setup.parentElement.appendChild(note);
+  }
+
+  setTimeout(refreshManagerStartV115,0);
 })();
 
 loadDB();
