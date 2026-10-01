@@ -7391,11 +7391,11 @@ loadDB=async function(){
       return p.overall>=buyerR-10;
     }).sort((a,b)=>candidateScoreV118(b,buyer,need)-candidateScoreV118(a,buyer,need)).slice(0,35);
   }
-  function feeForV118(p,buyer){
+  function feeForV118(p,buyerClub){
     if(p.club==='Agente libre')return 0;
     const seller=window.clubBoardProfileV117?.(p.club)||{trading:3,stars:2,youth:3};
-    const buyer=window.clubBoardProfileV117?.(buyer)||{ambition:3};
-    let factor=.9+Math.random()*.25+seller.trading*.025+buyer.ambition*.015;
+    const buyerProfile=window.clubBoardProfileV117?.(buyerClub)||{ambition:3};
+    let factor=.9+Math.random()*.25+seller.trading*.025+buyerProfile.ambition*.015;
     if(p.age<=23&&(p.potential||0)>=82)factor+=.08;
     if(p.overall>=82&&seller.stars>=4)factor+=.10;
     return Math.max(100000,Math.round((p.value||500000)*factor/50000)*50000);
