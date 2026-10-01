@@ -6938,6 +6938,291 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== CLUB BOARDS + PERSONALITY 10.17 =====
+// Cada club tiene una directiva con prioridades reales: paciencia, ambición, cantera, mercado y estrellas.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.board-profile-v117{margin-top:10px}.board-traits-v117{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin-top:9px}'+
+    '.board-trait-v117{padding:8px;border:1px solid var(--line);border-radius:10px;background:#09150f;min-width:0}.board-trait-v117 small{display:block;color:var(--muted);font-size:9px}.board-trait-v117 strong{font-size:14px}'+
+    '.board-meter-v117{height:5px;background:#17261e;border-radius:99px;overflow:hidden;margin-top:5px}.board-meter-v117 i{display:block;height:100%;background:var(--accent);border-radius:99px}'+
+    '.board-philosophy-v117{margin-top:9px;padding:9px 10px;border-left:3px solid #4c7b59;background:#0b1811;border-radius:8px;font-size:11px}'+
+    '.board-jobnote-v117{font-size:9px;color:var(--muted);margin-top:3px}'+
+    '.board-risk-v117{font-size:10px;font-weight:900;padding:3px 7px;border-radius:999px;border:1px solid var(--line)}'+
+    '.board-risk-v117.good{color:#8ee8a8;border-color:#315e41}.board-risk-v117.warn{color:#ffd77d;border-color:#705b2f}.board-risk-v117.bad{color:#ff9a9a;border-color:#733939}'+
+    '@media(max-width:760px){.board-traits-v117{grid-template-columns:repeat(2,minmax(0,1fr))}.board-trait-v117:last-child{grid-column:1/-1}}';
+  document.head.appendChild(style);
+
+  const SPECIAL_BOARDS_V117={
+    'Athletic Club':{name:'Cantera y pertenencia',patience:4,ambition:4,youth:5,trading:2,stars:1,text:'La directiva prioriza identidad, cantera y continuidad del proyecto sin renunciar a competir.'},
+    'Real Madrid':{name:'Ganar ahora',patience:1,ambition:5,youth:2,trading:1,stars:5,text:'Los grandes resultados pesan por encima de todo y el margen para una mala temporada es mínimo.'},
+    'FC Barcelona':{name:'Títulos con identidad',patience:2,ambition:5,youth:4,trading:2,stars:4,text:'Se exigen títulos, protagonismo y espacio para futbolistas formados o desarrollados en el club.'},
+    'FC Bayern München':{name:'Dominio doméstico',patience:2,ambition:5,youth:2,trading:1,stars:4,text:'La directiva espera competir por todos los títulos cada temporada.'},
+    'Manchester City':{name:'Excelencia inmediata',patience:2,ambition:5,youth:2,trading:1,stars:5,text:'Plantilla de élite, objetivos de élite y muy poco margen para quedarse lejos de los títulos.'},
+    'Paris Saint-Germain':{name:'Estrellas y títulos',patience:2,ambition:5,youth:1,trading:1,stars:5,text:'Se esperan figuras decisivas y resultados inmediatos en las grandes competiciones.'},
+    'SL Benfica':{name:'Competir y vender bien',patience:3,ambition:4,youth:5,trading:5,stars:1,text:'Desarrollar talento, competir y convertir ventas en nuevas oportunidades forma parte del proyecto.'},
+    'FC Porto':{name:'Competir y revalorizar',patience:3,ambition:4,youth:4,trading:5,stars:2,text:'La directiva valora descubrir, desarrollar y vender sin dejar de competir por títulos.'},
+    'Ajax':{name:'Cantera y desarrollo',patience:4,ambition:4,youth:5,trading:4,stars:1,text:'La formación y el crecimiento de jóvenes forman parte central de la identidad deportiva.'},
+    'Borussia Dortmund':{name:'Talento y crecimiento',patience:4,ambition:4,youth:5,trading:4,stars:2,text:'El club quiere competir arriba desarrollando futbolistas con margen de crecimiento.'}
+  };
+
+  function clubBoardProfileV117(club){
+    if(SPECIAL_BOARDS_V117[club])return{...SPECIAL_BOARDS_V117[club]};
+    const d=window.clubDNAV101?window.clubDNAV101(club):null;
+    const rating=clubRatingDB(club),h=hashV7(club||'club');
+    let ambition=rating>=82?5:rating>=76?4:rating>=69?3:2;
+    let patience=rating>=82?2:rating>=75?3:4;
+    let youth=clamp((d?.youth||1)+(d?.academy||1)-1,1,5);
+    let trading=d?.tags?.includes('Mercado')?4:(rating<72?3:2);
+    let stars=clamp((d?.star||0)+1,1,5);
+
+    if(d?.tags?.includes('Estabilidad'))patience=Math.min(5,patience+1);
+    if(d?.tags?.includes('Títulos')){ambition=Math.min(5,ambition+1);patience=Math.max(1,patience-1)}
+    if(d?.tags?.includes('Jóvenes')||d?.tags?.includes('Cantera'))youth=Math.min(5,youth+1);
+
+    const names=[
+      'Proyecto estable','Crecimiento sostenible','Competir y progresar',
+      'Resultados y mercado','Ambición deportiva'
+    ];
+    const name=names[clamp(ambition-1,0,4)];
+    return{
+      name,patience,ambition,youth,trading,stars,
+      text:d?.text||'La directiva busca equilibrar resultados, desarrollo de plantilla y estabilidad institucional.'
+    };
+  }
+  window.clubBoardProfileV117=clubBoardProfileV117;
+
+  function profileWordV117(v){
+    return v>=5?'Máxima':v===4?'Alta':v===3?'Media':v===2?'Baja':'Muy baja';
+  }
+  function fireThresholdV117(p){return clamp(30-p.patience*4+(p.ambition-3)*2,9,30)}
+  function minGamesV117(p){return clamp(7+p.patience*2-(p.ambition>=5?2:0),6,17)}
+  function boardRiskV117(){
+    const p=clubBoardProfileV117(S.club),threshold=fireThresholdV117(p),games=S.record?.p||0;
+    if(games<minGamesV117(p))return{label:'Evaluando proyecto',cls:'good'};
+    if(S.board<=threshold+3)return{label:'Puesto en peligro',cls:'bad'};
+    if(S.board<=threshold+14)return{label:'Bajo presión',cls:'warn'};
+    return{label:'Respaldo estable',cls:'good'};
+  }
+
+  const computeObjectiveV117Base=computeObjective;
+  computeObjective=function(club,lid){
+    const base=computeObjectiveV117Base(club,lid),p=clubBoardProfileV117(club);
+    const n=Math.max(1,getLeagueClubs(lid).length);
+    let target=base.target;
+    if(p.ambition>=5&&target>1)target=Math.max(1,target-1);
+    else if(p.ambition<=2&&target<n)target=Math.min(n,target+1);
+    let label=base.label;
+    if(target!==base.target){
+      if(target===1)label='Pelear por el título';
+      else if(target<=4)label='Acabar en puestos de Champions';
+      else if(target<=7)label='Acabar en puestos europeos';
+      else label='Terminar entre los '+target+' primeros';
+    }
+    return{...base,target,label,boardProfileV117:p.name};
+  };
+
+  const ensureV117Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV117Base();
+    if(!S)return;
+    S.clubBoardV117=S.clubBoardV117||{};
+    if(S.clubBoardV117.club!==S.club||S.clubBoardV117.season!==S.season){
+      S.clubBoardV117={
+        club:S.club,season:S.season,
+        transferIndex:(S.transfers||[]).length,
+        youthBase:S.managerLegacy?.youthPromotions||0,
+        debutBase:S.managerLegacy?.youthDebuts||0,
+        lastMonthly:null
+      };
+    }
+    processTransferReactionsV117();
+  };
+
+  function reactBoardV117(delta,title,text){
+    if(!delta)return;
+    S.board=clamp((S.board||70)+delta,0,100);
+    if(Math.abs(delta)>=1)addNews(title,text+' Confianza directiva '+(delta>0?'+':'')+delta.toFixed(1)+'.','directiva');
+  }
+
+  function processTransferReactionsV117(){
+    if(!S?.clubBoardV117)return;
+    const state=S.clubBoardV117,pf=clubBoardProfileV117(S.club),arr=S.transfers||[];
+    let i=state.transferIndex||0;
+    if(i>arr.length)i=arr.length;
+    for(;i<arr.length;i++){
+      const t=arr[i];
+      if(!t||!(t.from===S.club||t.to===S.club))continue;
+      const p=S.players.find(x=>x.name===t.player);
+      if(!p)continue;
+      let delta=0,reason='';
+      if(t.to===S.club&&(t.type==='IN'||t.type==='LOAN')){
+        if(p.age<=23&&pf.youth>=4){delta+=1.2;reason='La llegada de un joven encaja con el proyecto'}
+        if(p.overall>=82&&pf.stars>=4){delta+=1.4;reason=reason?reason+' y aporta una figura':'La directiva celebra la llegada de una figura'}
+        if(p.age>=29&&(t.fee||0)>=10000000&&pf.trading>=4){delta-=1.3;reason='La operación encaja poco con un modelo orientado a revalorizar talento'}
+      }else if(t.from===S.club&&t.type==='OUT'){
+        const ratio=(t.fee||0)/Math.max(1,p.value||1);
+        if(pf.trading>=4&&ratio>=.95){delta+=1.1;reason='La directiva valora una venta a buen precio'}
+        if(pf.youth>=4&&p.age<=23&&(p.potential||0)>=80){delta-=1.8;reason='La salida de un joven con potencial no gusta a una directiva de cantera'}
+        if(pf.stars>=4&&(p.overall||0)>=82){delta-=2.1;reason='La directiva quería conservar a una de las figuras del equipo'}
+      }
+      if(delta)reactBoardV117(delta,'Reacción de la directiva',reason+'.');
+    }
+    state.transferIndex=arr.length;
+  }
+
+  const promoteYouthV117Base=promoteYouth;
+  promoteYouth=function(id){
+    const before=(S.players||[]).length,pf=clubBoardProfileV117(S.club);
+    promoteYouthV117Base(id);
+    if((S.players||[]).length>before){
+      const gain=pf.youth>=5?1.5:pf.youth===4?.9:pf.youth===3?.4:0;
+      if(gain)reactBoardV117(gain,'La directiva mira a la cantera','Promover un juvenil encaja con la filosofía de '+S.club);
+    }
+  };
+
+  // La seguridad del usuario ahora depende de la personalidad de su directiva.
+  checkJobSecurity=function(){
+    const p=S.record?.p||0,pf=clubBoardProfileV117(S.club),pos=position(),target=S.objective?.target||999;
+    const miss=Math.max(0,pos-target);
+    if(p>=6){
+      const tolerance=2+pf.patience;
+      if(miss>tolerance)S.board=clamp(S.board-(.7+(miss-tolerance)*.55+pf.ambition*.12),0,100);
+      else if(pos<=target&&p%4===0)S.board=clamp(S.board+.35+pf.ambition*.08,0,100);
+    }
+    if(S.fans<25&&p>=8)S.board=clamp(S.board-(pf.patience<=2?2:1),0,100);
+    if(p>=minGamesV117(pf)&&S.board<fireThresholdV117(pf))fireManager(false);
+  };
+
+  function monthlyBoardPulseV117(date){
+    const d=new Date(date+'T12:00:00Z');
+    if(d.getUTCDate()>7||d.getUTCDay()!==1)return;
+    const st=S.clubBoardV117;if(!st||st.lastMonthly===date)return;
+    st.lastMonthly=date;
+    const pf=clubBoardProfileV117(S.club),dna=window.clubDNAV101?.(S.club);
+    let delta=0,reasons=[];
+
+    if(dna?.mentality&&S.mentality===dna.mentality){delta+=.35;reasons.push('el estilo encaja con el ADN')}
+    else if(dna?.mentality&&pf.ambition>=4){delta-=.2;reasons.push('la propuesta se aleja de la identidad esperada')}
+
+    const promoted=(S.managerLegacy?.youthPromotions||0)-(st.youthBase||0);
+    const debuted=(S.managerLegacy?.youthDebuts||0)-(st.debutBase||0);
+    if(pf.youth>=4){
+      if(promoted+debuted>0){delta+=.45;reasons.push('la cantera está teniendo oportunidades')}
+      else if((S.record?.p||0)>=10){delta-=.25;reasons.push('la cantera está teniendo poco protagonismo')}
+    }
+    if(Math.abs(delta)>=.2){
+      S.board=clamp(S.board+delta,0,100);
+      if(Math.abs(delta)>=.45)addNews('Pulso de la directiva','La evaluación mensual destaca que '+reasons.join(' y ')+'.','directiva');
+    }
+  }
+
+  // Antes de que 10.16 evalúe a entrenadores IA, ajustamos su presión según cada directiva.
+  const worldDayV117Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    const d=new Date(date+'T12:00:00Z');
+    if(d.getUTCDay()===1&&S?.managerWorldV116?.assignments){
+      for(const [club,id] of Object.entries(S.managerWorldV116.assignments)){
+        if(id==='__USER__'||club===S.club)continue;
+        const m=S.managerWorldV116.managers?.[id];if(!m)continue;
+        const pf=clubBoardProfileV117(club);
+        m.pressure=clamp((m.pressure||0)+(3-pf.patience)*2.3+(pf.ambition-3)*1.15,0,100);
+      }
+    }
+    worldDayV117Base(date);
+    ensureV7State();
+    monthlyBoardPulseV117(date);
+  };
+
+  // El mercado IA también sigue la identidad de los clubes.
+  simulateWorldTransferV7=function(date){
+    if(!isWindowOpen(date)||Math.random()>.075)return;
+    const all=S.players.filter(p=>p.club&&p.club!==S.club&&p.club!=='Agente libre'&&p.club!=='Retirado'&&!p.parentClub&&p.age<33&&p.value>300000);
+    if(!all.length)return;
+    const weighted=[];
+    for(const p of all){
+      const pf=clubBoardProfileV117(p.club);
+      let w=1+pf.trading*.42;
+      if(p.age<=23&&pf.trading>=4)w+=1.3;
+      if(p.age<=22&&pf.youth>=5)w-=.55;
+      if(p.overall>=83&&pf.stars>=4)w-=.55;
+      for(let i=0;i<Math.max(1,Math.round(w*2));i++)weighted.push(p);
+    }
+    const p=pick(weighted);if(!p)return;
+    const from=p.club,fromR=clubRatingDB(from);
+    const buyers=[...DB.clubs.keys()].filter(c=>c!==from&&c!==S.club&&clubRatingDB(c)>=fromR-7&&clubRatingDB(c)<=fromR+10);
+    if(!buyers.length)return;
+
+    const weightedBuyers=[];
+    for(const club of buyers){
+      const pf=clubBoardProfileV117(club);
+      let w=1;
+      if(p.age<=23)w+=pf.youth*.25;
+      if(p.overall>=80)w+=pf.stars*.28;
+      if(clubRatingDB(club)>fromR)w+=.5;
+      for(let i=0;i<Math.max(1,Math.round(w*2));i++)weightedBuyers.push(club);
+    }
+    const to=pick(weightedBuyers);if(!to)return;
+    const seller=clubBoardProfileV117(from);
+    const premium=seller.trading>=4?.08:seller.stars>=4?.04:0;
+    const fee=Math.round(p.value*(.80+premium+Math.random()*.48));
+    p.club=to;p.leagueId=DB.clubs.get(to)?.leagueId||p.leagueId;p.leagueName=EURO_LEAGUES[p.leagueId]?.name||p.leagueName;
+    p.morale=clamp((p.morale||70)+rnd(-2,6),20,100);
+    S.worldTransfers.unshift({date,player:p.name,from,to,fee,type:'transfer'});
+    S.worldTransfers=S.worldTransfers.slice(0,250);
+    if(p.overall>=82||p.leagueId===S.leagueId){
+      addNews('Mercado internacional',p.name+': '+from+' → '+to+' por '+euro(fee)+'.','mercado mundial');
+      pushDayEventV7(date,{type:'world',text:'Fichaje: '+p.name+' firma por '+to+'.'});
+    }
+  };
+
+  const switchClubV117Base=switchClub;
+  switchClub=function(club,lid,budget){
+    switchClubV117Base(club,lid,budget);
+    const pf=clubBoardProfileV117(S.club);
+    S.clubBoardV117={club:S.club,season:S.season,transferIndex:(S.transfers||[]).length,youthBase:S.managerLegacy?.youthPromotions||0,debutBase:S.managerLegacy?.youthDebuts||0,lastMonthly:null};
+    S.objective=computeObjective(S.club,S.leagueId);
+    addNews('Nueva directiva, nuevas reglas',pf.name+': '+pf.text,'directiva');
+  };
+
+  function traitHTMLV117(label,v){
+    return '<div class="board-trait-v117"><small>'+esc(label)+'</small><strong>'+esc(profileWordV117(v))+'</strong><div class="board-meter-v117"><i style="width:'+(v*20)+'%"></i></div></div>';
+  }
+
+  const renderCareerV117Base=renderCareerV7;
+  renderCareerV7=function(){
+    renderCareerV117Base();
+    ensureV7State();
+    const pf=clubBoardProfileV117(S.club),risk=boardRiskV117();
+    const card=document.createElement('div');
+    card.className='card board-profile-v117';
+    card.innerHTML=
+      '<div class="row"><div><h3 style="margin:0">🏛️ Directiva de '+esc(S.club)+'</h3><div class="muted">'+esc(pf.name)+'</div></div><span class="spacer"></span><span class="board-risk-v117 '+risk.cls+'">'+risk.label+'</span></div>'+
+      '<div class="board-traits-v117">'+
+        traitHTMLV117('Paciencia',pf.patience)+
+        traitHTMLV117('Ambición',pf.ambition)+
+        traitHTMLV117('Cantera',pf.youth)+
+        traitHTMLV117('Comprar / vender',pf.trading)+
+        traitHTMLV117('Estrellas',pf.stars)+
+      '</div>'+
+      '<div class="board-philosophy-v117">'+esc(pf.text)+'</div>'+
+      '<div class="row" style="margin-top:8px"><small class="muted">Objetivo actual: '+esc(S.objective?.label||'—')+'</small><span class="spacer"></span><small class="muted">Confianza '+Math.round(S.board)+'%</small></div>';
+    els.view.appendChild(card);
+
+    // En las ofertas de trabajo te enseñamos la personalidad antes de aceptar.
+    els.view.querySelectorAll('.acceptJob').forEach(btn=>{
+      const i=+btn.dataset.i,o=S.offers?.[i],row=btn.closest('.job-card');
+      if(!o||!row||row.querySelector('.board-jobnote-v117'))return;
+      const x=clubBoardProfileV117(o.club);
+      const note=document.createElement('div');
+      note.className='board-jobnote-v117';
+      note.textContent='🏛️ '+x.name+' · paciencia '+profileWordV117(x.patience).toLowerCase()+' · ambición '+profileWordV117(x.ambition).toLowerCase();
+      row.querySelector('div')?.appendChild(note);
+    });
+  };
+})();
+
 loadDB();
 })();
 </script>
