@@ -1389,6 +1389,9 @@ loadDB=async function(){
     autoTimerV95=setInterval(()=>tickV95(M),700);
   }
 
+  window.stopAutoV95=stopAutoV95;
+  window.startAutoV95=startAutoV95;
+
   const openMatchV95Base=openMatch;
   openMatch=function(f){
     clearTimerV95();
@@ -3753,6 +3756,471 @@ loadDB=async function(){
         '<div><h3>👔 Entrenadores rivales</h3><div class="network-list-v106">'+(managers.length?managers.map(r=>'<div class="network-row-v106"><div><strong>'+esc(r.name||'Entrenador')+'</strong><div class="muted">'+(r.meetings||0)+' duelos · '+esc(rivalryLabelV106(r))+'</div><div class="rival-meter-v106"><i style="width:'+clamp((r.rivalry||0)*2,0,100)+'%"></i></div></div><span class="world-score-v106 '+scoreClassV106(r.score||0)+'">'+((r.score||0)>0?'+':'')+(r.score||0)+'</span></div>').join(''):'<div class="empty">Las rivalidades aparecerán al repetir enfrentamientos.</div>')+'</div></div>'+
       '</div>';
     els.view.appendChild(card);
+  };
+})();
+
+
+// ===== CONTEXTUAL MATCH DECISIONS 10.7 =====
+// Gran bolsa de situaciones, pero solo 6-7 por partido (tope duro 10), sin repetir.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.match-decision-v107{margin:11px 0;padding:13px;border:1px solid #5f7740;border-radius:14px;background:linear-gradient(135deg,#172511,#0c1810);box-shadow:0 12px 30px #0005}'+
+    '.match-decision-v107.urgent{border-color:#8b4d38;background:linear-gradient(135deg,#29150f,#11150f)}'+
+    '.decision-top-v107{display:flex;gap:9px;align-items:flex-start}'+
+    '.decision-icon-v107{font-size:27px;line-height:1}'+
+    '.decision-count-v107{font-size:10px;font-weight:900;padding:4px 7px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}'+
+    '.decision-actions-v107{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:11px}'+
+    '.decision-actions-v107 .btn{min-height:54px;text-align:left;line-height:1.2}'+
+    '.decision-actions-v107 small{display:block;font-weight:500;color:#b8c8be;margin-top:4px}'+
+    '.decision-log-v107{margin-top:8px;font-size:10px;color:var(--muted)}'+
+    '@media(max-width:700px){.decision-actions-v107{grid-template-columns:1fr}.decision-actions-v107 .btn{min-height:48px}}';
+  document.head.appendChild(style);
+
+  let currentMatchV107=null;
+
+  function scoreV107(M){
+    return M.home?{us:M.hg,them:M.ag}:{us:M.ag,them:M.hg};
+  }
+  function playersV107(){return (S.lineup||[]).map(id=>S.players.find(p=>p.id===id)).filter(Boolean)}
+  function benchV107(){return (S.bench||[]).map(id=>S.players.find(p=>p.id===id)).filter(Boolean)}
+  function byPosV107(re){return playersV107().filter(p=>re.test(p.positions||''))}
+  function lowestFitV107(re){
+    const rows=re?byPosV107(re):playersV107();
+    return rows.slice().sort((a,b)=>(a.fitness||100)-(b.fitness||100))[0]||null;
+  }
+  function bestBenchV107(re){
+    return benchV107().filter(p=>!re||re.test(p.positions||'')).sort((a,b)=>b.overall-a.overall)[0]||null;
+  }
+  function bookedV107(M){
+    return playersV107().filter(p=>(M.events||[]).some(e=>String(e.text||'').includes(p.name)&&/Amarilla|🟨/.test(String(e.text||''))));
+  }
+  function captainV107(){return S.players.find(p=>p.id===S.captainId&&S.lineup.includes(p.id))||null}
+  function attackerV107(){
+    return byPosV107(/ST|CF|LW|RW|CAM/).sort((a,b)=>b.overall-a.overall)[0]||playersV107()[0]||null;
+  }
+  function youngsterV107(){return playersV107().filter(p=>p.age<=21).sort((a,b)=>a.age-b.age)[0]||null}
+  function addEdgeV107(M,n,minutes=14){
+    M.tacticalEdgeV107=clamp((M.tacticalEdgeV107||0)+n,-6,6);
+    M.edgeUntilV107=Math.max(M.edgeUntilV107||0,M.minute+minutes);
+    M.momentum=clamp((M.momentum||50)+n*2.1,10,90);
+  }
+  function fatigueTeamV107(n){playersV107().forEach(p=>p.fitness=clamp((p.fitness||100)+n,35,100))}
+  function moraleV107(p,n){if(p)p.morale=clamp((p.morale||70)+n,20,100)}
+  function maybeSwapV107(M,outP,inP){
+    if(!outP||!inP||M.subs>=5)return false;
+    applySub(M,outP.id,inP.id);
+    return true;
+  }
+  function managerNameV107(M){
+    try{return managerProfileV7(M.opp)?.name||'el entrenador rival'}catch(e){return'el entrenador rival'}
+  }
+  function choiceV107(label,hint,apply,cls='ghost'){return{label,hint,apply,cls}}
+
+  function poolV107(M){
+    const sc=scoreV107(M),min=M.minute,fit=lowestFitV107(),def=lowestFitV107(/CB|LB|RB|LWB|RWB/),
+      mid=lowestFitV107(/CDM|CM|CAM/),att=attackerV107(),cap=captainV107(),kid=youngsterV107(),
+      yellow=bookedV107(M)[0]||null,benchAtt=bestBenchV107(/ST|CF|LW|RW|CAM/),
+      benchDef=bestBenchV107(/CB|LB|RB|CDM/),behind=sc.us<sc.them,ahead=sc.us>sc.them,
+      home=!!M.home,oppCoach=managerNameV107(M),ourShots=M.myShots||0,theirShots=M.oppShots||0;
+
+    return [
+      {id:'wing_overload',icon:'↔️',title:'Te están haciendo daño por una banda',urgent:true,
+       ok:()=>min>=14&&def&&M.momentum<58,
+       text:()=>def.name+' está quedando demasiado expuesto y el rival insiste por su zona.',
+       choices:[
+         choiceV107('Doblar la ayuda','Más seguridad, menos salida.',()=>{addEdgeV107(M,1.4);def.fitness=clamp(def.fitness+1,35,100)}),
+         choiceV107('Adelantar al lateral','Arriesgas para empujar al rival atrás.',()=>{addEdgeV107(M,2);fatigueTeamV107(-1);S.mentality='Ofensiva'},'warn'),
+         choiceV107('Mantener el plan','Confías en que se ajuste solo.',()=>addEdgeV107(M,-.4))
+       ]},
+      {id:'midfield_lost',icon:'🧠',title:'Estás perdiendo el centro del campo',urgent:true,
+       ok:()=>min>=18&&mid&&(M.momentum<43||theirShots>ourShots+1),
+       text:()=>M.opp+' está encontrando demasiados pases entre líneas.',
+       choices:[
+         choiceV107('Cerrar por dentro','Ganas control y proteges la frontal.',()=>{addEdgeV107(M,1.8);S.mentality='Equilibrada'}),
+         choiceV107('Presionar más arriba','Puedes recuperar cerca del área rival.',()=>{addEdgeV107(M,2.3);fatigueTeamV107(-2);S.mentality='Presión alta'},'warn'),
+         choiceV107('No tocar nada','Esperas a que cambie la dinámica.',()=>addEdgeV107(M,-.5))
+       ]},
+      {id:'tired_key',icon:'🔋',title:'Un jugador importante está fundido',urgent:false,
+       ok:()=>min>=55&&fit&&(fit.fitness||100)<73,
+       text:()=>fit.name+' está bajando mucho físicamente ('+Math.round(fit.fitness||0)+'%).',
+       choices:[
+         choiceV107('Bajarle el ritmo','Conservas al jugador sin gastar cambio.',()=>{fit.fitness=clamp(fit.fitness+3,35,100);addEdgeV107(M,.6)}),
+         choiceV107('Cambiarlo','Metes piernas frescas.',()=>{const b=bestBenchV107(new RegExp((fit.positions||'').split(',')[0]||'ZZ'));if(!maybeSwapV107(M,fit,b))addEdgeV107(M,.4)}),
+         choiceV107('Que aguante','Buscas mantener calidad, con riesgo físico.',()=>{addEdgeV107(M,1.1);fit.fitness=clamp(fit.fitness-3,35,100)},'warn')
+       ]},
+      {id:'booked_player',icon:'🟨',title:'Un jugador está jugando al límite',urgent:true,
+       ok:()=>min>=28&&yellow,
+       text:()=>yellow.name+' ya tiene amarilla y sigue llegando tarde a los duelos.',
+       choices:[
+         choiceV107('Pedirle calma','Reduce riesgo sin sustituirlo.',()=>{moraleV107(yellow,1);addEdgeV107(M,.5)}),
+         choiceV107('Sustituirlo','Eliminas el riesgo de expulsión.',()=>{const b=bestBenchV107();if(!maybeSwapV107(M,yellow,b))addEdgeV107(M,.3)}),
+         choiceV107('Que siga igual','Mantienes agresividad.',()=>{addEdgeV107(M,1.3);yellow.fitness=clamp(yellow.fitness-1,35,100)},'warn')
+       ]},
+      {id:'striker_frustrated',icon:'😤',title:'Tu atacante está frustrado',urgent:false,
+       ok:()=>min>=30&&att&&ourShots<=theirShots+1,
+       text:()=>att.name+' lleva tiempo sin recibir en buenas condiciones.',
+       choices:[
+         choiceV107('Hablar con él','Le das confianza para seguir buscando el gol.',()=>{moraleV107(att,3);addEdgeV107(M,.8)}),
+         choiceV107('Buscarle más','El equipo jugará más directo hacia él.',()=>{addEdgeV107(M,1.8);S.mentality='Ofensiva'}),
+         choiceV107('Cambiar referencia','Pruebas con otro atacante.',()=>{if(!maybeSwapV107(M,att,benchAtt))addEdgeV107(M,.2)})
+       ]},
+      {id:'captain_slow',icon:'©️',title:'El capitán pide bajar revoluciones',urgent:false,
+       ok:()=>min>=58&&cap&&ahead&&playersV107().reduce((a,p)=>a+(p.fitness||100),0)/Math.max(1,playersV107().length)<80,
+       text:()=>cap.name+' cree que el equipo necesita respirar y controlar más el balón.',
+       choices:[
+         choiceV107('Hacerle caso','Más control y mejor relación con el líder.',()=>{S.mentality='Equilibrada';fatigueTeamV107(1);moraleV107(cap,2);addEdgeV107(M,1)}),
+         choiceV107('Seguir atacando','Buscas sentenciar antes de replegar.',()=>{S.mentality='Ofensiva';addEdgeV107(M,1.4);fatigueTeamV107(-1)},'warn'),
+         choiceV107('Decidir tú','Mantienes la idea actual.',()=>addEdgeV107(M,.2))
+       ]},
+      {id:'young_nervous',icon:'🌱',title:'El joven está notando la presión',urgent:false,
+       ok:()=>min>=20&&kid&&(kid.morale||70)<82,
+       text:()=>kid.name+' está algo precipitado en sus acciones.',
+       choices:[
+         choiceV107('Darle confianza','Puede crecer dentro del propio partido.',()=>{moraleV107(kid,4);addEdgeV107(M,.7)}),
+         choiceV107('Simplificar su juego','Menos riesgo y más seguridad.',()=>{moraleV107(kid,2);addEdgeV107(M,1)}),
+         choiceV107('Exigirle más','Puede reaccionar... o bloquearse.',()=>{moraleV107(kid,Math.random()<.6?3:-3);addEdgeV107(M,Math.random()<.6?1.5:-1)},'warn')
+       ]},
+      {id:'rival_system',icon:'♟️',title:'El rival cambia el dibujo',urgent:true,
+       ok:()=>min>=52&&min<=76,
+       text:()=>oppCoach+' modifica el sistema y empieza a cargar más jugadores por dentro.',
+       choices:[
+         choiceV107('Responder al cambio','Ajustas posiciones para igualar la zona.',()=>addEdgeV107(M,1.8)),
+         choiceV107('Atacar el espacio que deja','Aceptas un partido más abierto.',()=>{addEdgeV107(M,2.2);S.mentality='Ofensiva';fatigueTeamV107(-1)},'warn'),
+         choiceV107('Que se adapten ellos','Mantienes tu plan.',()=>addEdgeV107(M,-.2))
+       ]},
+      {id:'late_chase',icon:'🚨',title:'Se acaba el tiempo',urgent:true,
+       ok:()=>min>=72&&behind,
+       text:()=> 'Vas perdiendo '+sc.us+'-'+sc.them+' y necesitas cambiar el partido.',
+       choices:[
+         choiceV107('Meter otro atacante','Más amenaza, menos equilibrio.',()=>{S.mentality='Ofensiva';addEdgeV107(M,2.7);fatigueTeamV107(-1);if(benchAtt&&def)maybeSwapV107(M,def,benchAtt)},'warn'),
+         choiceV107('Presión total','Aprietas arriba para recuperar rápido.',()=>{S.mentality='Presión alta';addEdgeV107(M,2.3);fatigueTeamV107(-2)},'warn'),
+         choiceV107('Paciencia','Evitas romper el equipo demasiado pronto.',()=>{S.mentality='Equilibrada';addEdgeV107(M,.8)})
+       ]},
+      {id:'protect_lead',icon:'🛡️',title:'El rival aprieta el final',urgent:true,
+       ok:()=>min>=76&&ahead&&M.momentum<55,
+       text:()=> 'Vas ganando '+sc.us+'-'+sc.them+', pero '+M.opp+' está adelantando líneas.',
+       choices:[
+         choiceV107('Cerrar el partido','Bloque más bajo y control.',()=>{S.mentality='Defensiva';addEdgeV107(M,1.8)}),
+         choiceV107('Buscar la contra','Concedes balón para atacar espacios.',()=>{S.mentality='Equilibrada';addEdgeV107(M,2)}),
+         choiceV107('Ir a por otro','No renuncias a atacar.',()=>{S.mentality='Ofensiva';addEdgeV107(M,1.2);fatigueTeamV107(-1)},'warn')
+       ]},
+      {id:'fans_impatient',icon:'🏟️',title:'La grada empieza a impacientarse',urgent:false,
+       ok:()=>home&&min>=57&&min<=75&&sc.us===sc.them&&ourShots<=theirShots,
+       text:()=> 'Jugando en casa, el público pide un paso adelante.',
+       choices:[
+         choiceV107('Responder a la grada','Subes líneas y buscas el partido.',()=>{S.mentality='Ofensiva';addEdgeV107(M,1.8);S.fans=clamp(S.fans+.2,0,100)}),
+         choiceV107('Mantener la cabeza fría','No dejas que el ambiente mande.',()=>{S.mentality='Equilibrada';addEdgeV107(M,.8)}),
+         choiceV107('Presión máxima','Quieres cambiar el ritmo de golpe.',()=>{S.mentality='Presión alta';addEdgeV107(M,2.2);fatigueTeamV107(-2)},'warn')
+       ]},
+      {id:'counter_risk',icon:'⚡',title:'Te están castigando a la contra',urgent:true,
+       ok:()=>min>=24&&M.momentum>=55&&theirShots>=ourShots,
+       text:()=> 'Estás atacando, pero cada pérdida está dejando metros a tu espalda.',
+       choices:[
+         choiceV107('Dejar un mediocentro atrás','Equilibras mejor las transiciones.',()=>addEdgeV107(M,1.8)),
+         choiceV107('Seguir asfixiando','Más presión para evitar que salgan.',()=>{S.mentality='Presión alta';addEdgeV107(M,1.6);fatigueTeamV107(-2)},'warn'),
+         choiceV107('Bajar el ritmo','Reduces pérdidas y controlas.',()=>{S.mentality='Equilibrada';addEdgeV107(M,1)})
+       ]},
+      {id:'set_piece',icon:'🎯',title:'Estás generando muchas acciones a balón parado',urgent:false,
+       ok:()=>min>=32&&ourShots>=2,
+       text:()=> 'El rival está concediendo faltas y córners cerca de su área.',
+       choices:[
+         choiceV107('Cargar el área','Más presencia para rematar.',()=>addEdgeV107(M,1.5)),
+         choiceV107('Jugada ensayada','Buscas sorprender con una variante.',()=>addEdgeV107(M,1.9)),
+         choiceV107('Sacar en corto','Priorizas conservar el balón.',()=>{M.momentum=clamp(M.momentum+4,10,90);addEdgeV107(M,.7)})
+       ]},
+      {id:'keeper_build',icon:'🧤',title:'El rival presiona tu salida de balón',urgent:false,
+       ok:()=>min>=12&&min<=48&&M.momentum<52,
+       text:()=> M.opp+' está saltando muy arriba cuando inicia tu portero.',
+       choices:[
+         choiceV107('Salir en corto','Mantienes tu idea pese a la presión.',()=>addEdgeV107(M,1.1)),
+         choiceV107('Buscar juego directo','Saltas la primera línea rival.',()=>addEdgeV107(M,1.6)),
+         choiceV107('Alternar ambas','Intentas que no puedan anticipar la salida.',()=>addEdgeV107(M,1.8))
+       ]},
+      {id:'dominating_no_goal',icon:'📊',title:'Dominas, pero no haces daño',urgent:false,
+       ok:()=>min>=35&&sc.us===sc.them&&M.momentum>=60&&ourShots<=2,
+       text:()=> 'Tienes el control territorial, pero faltan ocasiones claras.',
+       choices:[
+         choiceV107('Acelerar último tercio','Más riesgo cerca del área.',()=>{addEdgeV107(M,2);S.mentality='Ofensiva'}),
+         choiceV107('Mover al rival','Sigues circulando hasta encontrar hueco.',()=>addEdgeV107(M,1.1)),
+         choiceV107('Disparar más','Buscas segundas jugadas y rechaces.',()=>addEdgeV107(M,1.5))
+       ]},
+      {id:'under_siege',icon:'🧱',title:'Estás encerrado demasiado atrás',urgent:true,
+       ok:()=>min>=22&&M.momentum<=35,
+       text:()=> M.opp+' está acumulando ataques y te cuesta salir.',
+       choices:[
+         choiceV107('Juntar líneas','Primero aseguras el área.',()=>{S.mentality='Defensiva';addEdgeV107(M,1.2)}),
+         choiceV107('Salir presionando','Intentas recuperar metros de golpe.',()=>{S.mentality='Presión alta';addEdgeV107(M,2.2);fatigueTeamV107(-2)},'warn'),
+         choiceV107('Buscar una contra','Esperas el momento para correr.',()=>{S.mentality='Equilibrada';addEdgeV107(M,1.8)})
+       ]},
+      {id:'fresh_winger',icon:'💨',title:'Hay espacio para piernas frescas',urgent:false,
+       ok:()=>min>=62&&bestBenchV107(/LW|RW|ST/)&&def,
+       text:()=> 'El rival empieza a dejar metros a su espalda y tienes velocidad en el banquillo.',
+       choices:[
+         choiceV107('Meter velocidad','Cambio ofensivo para atacar espacios.',()=>{const b=bestBenchV107(/LW|RW|ST/);const o=lowestFitV107(/LW|RW|ST|CAM/);if(!maybeSwapV107(M,o,b))addEdgeV107(M,1.4);else addEdgeV107(M,1.7)}),
+         choiceV107('Guardarlo para el final','Esperas a que el rival esté aún más cansado.',()=>addEdgeV107(M,.4)),
+         choiceV107('Atacar con los que están','No gastas un cambio.',()=>{S.mentality='Ofensiva';addEdgeV107(M,1)})
+       ]},
+      {id:'defender_duel',icon:'🥊',title:'Tu central pierde demasiados duelos',urgent:true,
+       ok:()=>min>=25&&def&&theirShots>=2,
+       text:()=> def.name+' está sufriendo en los duelos directos.',
+       choices:[
+         choiceV107('Dar cobertura','Un compañero estará más cerca.',()=>addEdgeV107(M,1.5)),
+         choiceV107('Cambiar defensor','Buscas cortar el problema de raíz.',()=>{if(!maybeSwapV107(M,def,benchDef))addEdgeV107(M,.5)}),
+         choiceV107('Defender hacia delante','Pides anticipar y ser agresivos.',()=>{addEdgeV107(M,1.7);fatigueTeamV107(-1)},'warn')
+       ]},
+      {id:'tempo_control',icon:'🎚️',title:'El partido pide controlar el ritmo',urgent:false,
+       ok:()=>min>=26&&min<=70&&Math.abs(sc.us-sc.them)<=1,
+       text:()=> 'El encuentro está entrando en una fase de ida y vuelta.',
+       choices:[
+         choiceV107('Dormir el partido','Más posesión y menos transiciones.',()=>{S.mentality='Equilibrada';addEdgeV107(M,1)}),
+         choiceV107('Acelerar','Intentas aprovechar el desorden.',()=>{S.mentality='Ofensiva';addEdgeV107(M,1.8);fatigueTeamV107(-1)},'warn'),
+         choiceV107('Dejarlo abierto','Aceptas el intercambio.',()=>addEdgeV107(M,.5))
+       ]},
+      {id:'captain_push',icon:'🗣️',title:'El capitán pide ir a por ellos',urgent:false,
+       ok:()=>min>=48&&cap&&!ahead&&M.momentum>=48,
+       text:()=> cap.name+' siente que el rival está vulnerable y pide dar un paso adelante.',
+       choices:[
+         choiceV107('Seguir al capitán','El equipo recibe el mensaje.',()=>{moraleV107(cap,2);S.mentality='Ofensiva';addEdgeV107(M,1.8)}),
+         choiceV107('Esperar el momento','No quieres precipitarte.',()=>{S.mentality='Equilibrada';addEdgeV107(M,.7)}),
+         choiceV107('Tú marcas el plan','Mantienes autoridad y sistema.',()=>addEdgeV107(M,.3))
+       ]},
+      {id:'forced_player',icon:'🩺',title:'Aparecen molestias físicas',urgent:true,
+       ok:()=>min>=35&&playersV107().some(p=>p.forcedAvailable||p.matchInjured),
+       text:()=> {const p=playersV107().find(x=>x.forcedAvailable||x.matchInjured);return (p?.name||'Un jugador')+' hace gestos al banquillo y no parece estar al cien por cien.'},
+       choices:[
+         choiceV107('Cambiarlo ya','No arriesgas una lesión mayor.',()=>{const p=playersV107().find(x=>x.forcedAvailable||x.matchInjured);if(p)maybeSwapV107(M,p,bestBenchV107())}),
+         choiceV107('Cinco minutos más','Compruebas si puede continuar.',()=>{const p=playersV107().find(x=>x.forcedAvailable||x.matchInjured);if(p)p.fitness=clamp(p.fitness-2,30,100);addEdgeV107(M,.6)},'warn'),
+         choiceV107('Que siga','Asumes el riesgo para no tocar el equipo.',()=>{const p=playersV107().find(x=>x.forcedAvailable||x.matchInjured);if(p)p.fitness=clamp(p.fitness-4,30,100);addEdgeV107(M,1)},'danger')
+       ]},
+      {id:'derby_heat',icon:'🔥',title:'El partido se está calentando',urgent:true,
+       ok:()=>rivalryLevelV7(S.club,M.opp)>0&&min>=25&&min<=72,
+       text:()=> 'La tensión de la rivalidad está creciendo y cualquier choque puede encender el partido.',
+       choices:[
+         choiceV107('Calmar al equipo','Evitas entrar en provocaciones.',()=>{playersV107().forEach(p=>moraleV107(p,1));addEdgeV107(M,.8)}),
+         choiceV107('Competir al límite','Quieres ganar cada duelo.',()=>{addEdgeV107(M,1.8);fatigueTeamV107(-1)},'warn'),
+         choiceV107('Usar la grada','Pides intensidad sin perder la cabeza.',()=>{addEdgeV107(M,1.4);S.fans=clamp(S.fans+.15,0,100)})
+       ]},
+      {id:'opp_tired',icon:'👀',title:'El rival empieza a mostrar cansancio',urgent:false,
+       ok:()=>min>=64&&M.momentum>=48,
+       text:()=> 'Tu cuerpo técnico detecta espacios cada vez mayores entre sus líneas.',
+       choices:[
+         choiceV107('Subir el ritmo','Intentas romper el partido ahora.',()=>{S.mentality='Ofensiva';addEdgeV107(M,2)}),
+         choiceV107('Moverlos de lado a lado','Les obligas a correr sin exponerte tanto.',()=>addEdgeV107(M,1.4)),
+         choiceV107('Guardar energía','Piensas también en los próximos partidos.',()=>{fatigueTeamV107(1);addEdgeV107(M,.4)})
+       ]},
+      {id:'bench_voice',icon:'🪑',title:'El banquillo pide una oportunidad',urgent:false,
+       ok:()=>min>=60&&benchAtt&&att&&benchAtt.overall>=att.overall-4,
+       text:()=> benchAtt.name+' está calentando con mucha intensidad y el asistente cree que puede cambiar el partido.',
+       choices:[
+         choiceV107('Darle entrada','Premias al suplente y refrescas el ataque.',()=>{if(maybeSwapV107(M,att,benchAtt)){moraleV107(benchAtt,2);addEdgeV107(M,1.4)}}),
+         choiceV107('Esperar','Mantienes al titular unos minutos más.',()=>addEdgeV107(M,.3)),
+         choiceV107('Cambiar el sistema, no el jugador','Intentas activar al titular desde la táctica.',()=>{addEdgeV107(M,1.1);moraleV107(att,1)})
+       ]},
+      {id:'narrow_lead',icon:'⏱️',title:'Hay que gestionar los últimos minutos',urgent:false,
+       ok:()=>min>=82&&ahead,
+       text:()=> 'Quedan pocos minutos y cualquier pérdida puede cambiar el resultado.',
+       choices:[
+         choiceV107('Esquina y posesión','Prioridad absoluta a consumir tiempo.',()=>{S.mentality='Defensiva';addEdgeV107(M,1.5)}),
+         choiceV107('Contra rápida','Buscas sentenciar si el rival se vuelca.',()=>{S.mentality='Equilibrada';addEdgeV107(M,1.8)}),
+         choiceV107('Seguir igual','No quieres transmitir miedo.',()=>addEdgeV107(M,.6))
+       ]},
+      {id:'last_push_draw',icon:'⌛',title:'Última oportunidad para ir a por los tres puntos',urgent:false,
+       ok:()=>min>=80&&sc.us===sc.them,
+       text:()=> 'El empate sigue en el marcador y todavía queda tiempo para una última apuesta.',
+       choices:[
+         choiceV107('A por la victoria','Aceptas riesgo para buscar los tres puntos.',()=>{S.mentality='Ofensiva';addEdgeV107(M,2.2);fatigueTeamV107(-1)},'warn'),
+         choiceV107('No perderlo','Das valor al punto.',()=>{S.mentality='Equilibrada';addEdgeV107(M,.8)}),
+         choiceV107('Presión final','Cinco minutos de máxima intensidad.',()=>{S.mentality='Presión alta';addEdgeV107(M,2.4);fatigueTeamV107(-2)},'warn')
+       ]},
+      {id:'shape_spacing',icon:'📐',title:'El equipo está demasiado partido',urgent:false,
+       ok:()=>min>=16&&min<=60,
+       text:()=> 'Tu asistente avisa de que hay demasiada distancia entre defensa y ataque.',
+       choices:[
+         choiceV107('Compactar líneas','Mejoras ayudas y segundas jugadas.',()=>addEdgeV107(M,1.4)),
+         choiceV107('Defensa más arriba','Acortas el campo con más riesgo a la espalda.',()=>{addEdgeV107(M,1.8);fatigueTeamV107(-1)},'warn'),
+         choiceV107('Mantener amplitud','Priorizas ocupar todo el campo.',()=>addEdgeV107(M,.6))
+       ]},
+      {id:'target_space',icon:'🔎',title:'Tu analista detecta una debilidad',urgent:false,
+       ok:()=>min>=18&&min<=68,
+       text:()=> 'El lateral rival está dejando mucho espacio cuando su equipo pierde el balón.',
+       choices:[
+         choiceV107('Atacar esa zona','Orientas más posesiones hacia esa banda.',()=>addEdgeV107(M,1.7)),
+         choiceV107('Usarlo como señuelo','Atraes al rival para atacar el lado contrario.',()=>addEdgeV107(M,1.5)),
+         choiceV107('Seguir variando','No quieres volver el ataque previsible.',()=>addEdgeV107(M,.8))
+       ]},
+      {id:'press_trigger',icon:'🧲',title:'El rival comete errores al iniciar',urgent:false,
+       ok:()=>min>=12&&min<=55&&M.momentum>=45,
+       text:()=> 'Su central está incómodo cuando recibe de espaldas a la presión.',
+       choices:[
+         choiceV107('Activar la presión','Saltas sobre él cada vez que reciba.',()=>{S.mentality='Presión alta';addEdgeV107(M,1.9);fatigueTeamV107(-1)}),
+         choiceV107('Trampa de presión','Le dejas recibir y cierras su siguiente pase.',()=>addEdgeV107(M,1.8)),
+         choiceV107('No obsesionarse','Mantienes la estructura general.',()=>addEdgeV107(M,.5))
+       ]},
+      {id:'star_hot',icon:'⭐',title:'Tu jugador más peligroso está enchufado',urgent:false,
+       ok:()=>min>=30&&att&&M.momentum>=55&&ourShots>=2,
+       text:()=> att.name+' está encontrando espacios y pide más balón.',
+       choices:[
+         choiceV107('Darle libertad','Le permites aparecer por todo el frente.',()=>{moraleV107(att,2);addEdgeV107(M,1.8)}),
+         choiceV107('Fijarlo arriba','Quieres que esté cerca del área.',()=>addEdgeV107(M,1.4)),
+         choiceV107('No cambiar roles','Evitas romper automatismos.',()=>addEdgeV107(M,.7))
+       ]},
+      {id:'generic_focus',icon:'🎯',title:'Momento para ajustar detalles',urgent:false,
+       ok:()=>true,
+       text:()=> 'El partido entra en una fase en la que una pequeña decisión puede inclinar la dinámica.',
+       choices:[
+         choiceV107('Más intensidad','Subes un punto el ritmo.',()=>{addEdgeV107(M,1.2);fatigueTeamV107(-1)}),
+         choiceV107('Más control','Priorizas orden y posesión.',()=>{S.mentality='Equilibrada';addEdgeV107(M,.9)}),
+         choiceV107('Mantener','Confías en el plan inicial.',()=>addEdgeV107(M,.3))
+       ]},
+      {id:'generic_width',icon:'↔️',title:'El campo pide más amplitud',urgent:false,
+       ok:()=>true,
+       text:()=> 'Hay zonas exteriores que todavía no estás aprovechando bien.',
+       choices:[
+         choiceV107('Abrir el campo','Buscas uno contra uno por fuera.',()=>addEdgeV107(M,1.2)),
+         choiceV107('Seguir por dentro','Confías en asociaciones cortas.',()=>addEdgeV107(M,.8)),
+         choiceV107('Alternar','Cambias de orientación con más frecuencia.',()=>addEdgeV107(M,1.1))
+       ]},
+      {id:'generic_secondballs',icon:'⚔️',title:'Las segundas jugadas están decidiendo el ritmo',urgent:false,
+       ok:()=>true,
+       text:()=> 'Muchos balones divididos están quedando sin dueño en el centro.',
+       choices:[
+         choiceV107('Ir con más gente','Buscas ganar las segundas jugadas.',()=>{addEdgeV107(M,1.2);fatigueTeamV107(-1)}),
+         choiceV107('Guardar posición','Evitas desordenarte.',()=>addEdgeV107(M,.8)),
+         choiceV107('Saltar tras pérdida','Presionas justo después de perder.',()=>{addEdgeV107(M,1.4);fatigueTeamV107(-1)})
+       ]}
+    ];
+  }
+
+  function scheduleV107(){
+    const ranges=[[9,15],[18,25],[28,35],[38,43],[51,58],[61,68],[71,78],[81,87]];
+    const target=Math.random()<.58?7:6;
+    const shuffled=ranges.slice().sort(()=>Math.random()-.5).slice(0,target).sort((a,b)=>a[0]-b[0]);
+    return{target,minutes:shuffled.map(r=>rnd(r[0],r[1]))};
+  }
+
+  function ensureMatchV107(M){
+    if(!M||M.matchDecisionReadyV107)return;
+    const sc=scheduleV107();
+    M.matchDecisionReadyV107=true;
+    M.matchDecisionTargetV107=sc.target;
+    M.matchDecisionMinutesV107=sc.minutes;
+    M.matchDecisionDoneV107=0;
+    M.matchDecisionUsedV107=[];
+    M.matchDecisionLogV107=[];
+    M.tacticalEdgeV107=0;
+    M.edgeUntilV107=0;
+  }
+
+  function dueV107(M){
+    ensureMatchV107(M);
+    if(M.done||M.pendingDecisionV107||(M.matchDecisionDoneV107||0)>=Math.min(10,M.matchDecisionTargetV107||7))return false;
+    return (M.matchDecisionMinutesV107||[]).some(x=>x<=M.minute&&!M.matchDecisionUsedMinutesV107?.includes(x));
+  }
+
+  function createDecisionV107(M){
+    ensureMatchV107(M);
+    if(!dueV107(M))return false;
+    M.matchDecisionUsedMinutesV107=M.matchDecisionUsedMinutesV107||[];
+    const minute=(M.matchDecisionMinutesV107||[]).find(x=>x<=M.minute&&!M.matchDecisionUsedMinutesV107.includes(x));
+    if(minute==null)return false;
+    M.matchDecisionUsedMinutesV107.push(minute);
+    const used=new Set(M.matchDecisionUsedV107||[]);
+    const candidates=poolV107(M).filter(t=>!used.has(t.id)&&t.ok());
+    const preferred=candidates.filter(t=>t.id!=='generic_focus'&&t.id!=='generic_width'&&t.id!=='generic_secondballs');
+    const tpl=pick(preferred.length?preferred:candidates);
+    if(!tpl)return false;
+    M.pendingDecisionV107={tpl,shownAt:M.minute};
+    M.matchDecisionUsedV107.push(tpl.id);
+    if(typeof window.stopAutoV95==='function')window.stopAutoV95(M);
+    M.autoRunningV95=false;
+    return true;
+  }
+
+  function answerDecisionV107(M,index){
+    const d=M?.pendingDecisionV107,choice=d?.tpl?.choices?.[index];
+    if(!d||!choice)return;
+    try{choice.apply()}catch(e){console.warn('decision apply',e)}
+    M.matchDecisionDoneV107=(M.matchDecisionDoneV107||0)+1;
+    M.matchDecisionLogV107.unshift({minute:M.minute,title:d.tpl.title,choice:choice.label});
+    M.matchDecisionLogV107=M.matchDecisionLogV107.slice(0,10);
+    M.events.push({text:'🧠 '+M.minute+"' Decisión: "+choice.label+'.',side:'us'});
+    M.pendingDecisionV107=null;
+    save();
+    renderMatch(M);
+    if(!M.done&&!(M.minute===45&&!M.secondHalfV95)&&typeof window.startAutoV95==='function'){
+      setTimeout(()=>window.startAutoV95(M),120);
+    }
+  }
+
+  const teamPowerV107Base=teamPower;
+  teamPower=function(ids){
+    let base=teamPowerV107Base(ids);
+    if(currentMatchV107&&!currentMatchV107.done&&Array.isArray(ids)&&ids.length===S.lineup.length&&ids.every((id,i)=>id===S.lineup[i])){
+      const edge=(currentMatchV107.edgeUntilV107||0)>=currentMatchV107.minute?(currentMatchV107.tacticalEdgeV107||0):0;
+      base+=edge*.45;
+    }
+    return base;
+  };
+
+  const simulateChanceV107Base=simulateChance;
+  simulateChance=function(M){
+    currentMatchV107=M;
+    simulateChanceV107Base(M);
+    if((M.edgeUntilV107||0)<M.minute)M.tacticalEdgeV107=(M.tacticalEdgeV107||0)*.5;
+  };
+
+  const advanceMatchV107Base=advanceMatch;
+  advanceMatch=function(M,mins){
+    currentMatchV107=M;
+    if(M?.pendingDecisionV107)return;
+    advanceMatchV107Base(M,mins);
+    if(!M.done&&createDecisionV107(M))renderMatch(M);
+  };
+
+  const renderMatchV107Base=renderMatch;
+  renderMatch=function(M){
+    currentMatchV107=M;
+    ensureMatchV107(M);
+    renderMatchV107Base(M);
+    if(!M||M.done)return;
+
+    if(!M.pendingDecisionV107&&createDecisionV107(M)){
+      renderMatchV107Base(M);
+    }
+    const d=M.pendingDecisionV107;
+    if(!d)return;
+
+    if(typeof window.stopAutoV95==='function')window.stopAutoV95(M);
+    M.autoRunningV95=false;
+
+    const box=document.createElement('div');
+    box.className='match-decision-v107 '+(d.tpl.urgent?'urgent':'');
+    box.innerHTML=
+      '<div class="decision-top-v107"><span class="decision-icon-v107">'+d.tpl.icon+'</span><div><strong>'+esc(d.tpl.title)+'</strong><div class="muted" style="margin-top:3px">'+esc(d.tpl.text())+'</div></div><span class="spacer"></span><span class="decision-count-v107">DECISIÓN '+((M.matchDecisionDoneV107||0)+1)+' / '+(M.matchDecisionTargetV107||7)+'</span></div>'+
+      '<div class="decision-actions-v107">'+d.tpl.choices.map((ch,i)=>'<button class="btn '+esc(ch.cls||'ghost')+' decisionChoiceV107" data-i="'+i+'"><strong>'+esc(ch.label)+'</strong><small>'+esc(ch.hint)+'</small></button>').join('')+'</div>'+
+      '<div class="decision-log-v107">El reloj está pausado. En este partido saldrán '+(M.matchDecisionTargetV107||7)+' situaciones y nunca más de 10.</div>';
+
+    const flow=els.matchBox.querySelector('.flow-card-v95');
+    if(flow)flow.insertAdjacentElement('beforebegin',box);
+    else{
+      const score=els.matchBox.querySelector('.scoreboard');
+      if(score)score.insertAdjacentElement('afterend',box);
+      else els.matchBox.prepend(box);
+    }
+    box.querySelectorAll('.decisionChoiceV107').forEach(b=>b.onclick=()=>answerDecisionV107(M,+b.dataset.i));
+
+    for(const id of ['step5','toHT','finishMatch']){
+      const b=els.matchBox.querySelector('#'+id);
+      if(b)b.disabled=true;
+    }
+  };
+
+  const finishMatchV107Base=finishMatch;
+  finishMatch=function(M){
+    currentMatchV107=M;
+    if(M?.pendingDecisionV107)return;
+    finishMatchV107Base(M);
   };
 })();
 
