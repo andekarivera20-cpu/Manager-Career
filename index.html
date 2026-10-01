@@ -3017,6 +3017,394 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== CAREER MEMORY + RELATIONSHIPS 10.5 =====
+// El mundo recuerda al entrenador: vínculos persistentes, recuerdos y una identidad que se forma jugando.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.legacy-grid-v105{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}'+
+    '.legacy-kpi-v105{padding:10px;border:1px solid var(--line);border-radius:11px;background:#0a1510;text-align:center}'+
+    '.legacy-kpi-v105 small{display:block;color:var(--muted);font-size:10px}.legacy-kpi-v105 strong{font-size:19px}'+
+    '.identity-tags-v105{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}'+
+    '.identity-tag-v105{padding:5px 9px;border-radius:999px;border:1px solid #356348;background:#10251a;font-size:11px;font-weight:900}'+
+    '.relation-v105{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid #1b2c23}'+
+    '.relation-v105:last-child{border-bottom:0}'+
+    '.rel-score-v105{min-width:49px;text-align:center;padding:4px 7px;border-radius:999px;border:1px solid var(--line);font-weight:900;font-size:11px}'+
+    '.rel-score-v105.good{color:#8ee8a8;border-color:#2f6541;background:#102319}'+
+    '.rel-score-v105.bad{color:#ff9a9a;border-color:#743737;background:#251111}'+
+    '.rel-score-v105.neutral{color:#d8dedb}'+
+    '.memory-line-v105{padding:8px 0;border-bottom:1px solid #1b2c23}.memory-line-v105:last-child{border-bottom:0}'+
+    '.known-player-v105{display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:3px 7px;border:1px solid var(--line);border-radius:999px;font-size:10px;font-weight:900}'+
+    '.neg-memory-v105{margin:10px 0;padding:10px;border:1px solid #355943;border-radius:11px;background:#0e2017}'+
+    '@media(max-width:650px){.legacy-grid-v105{grid-template-columns:repeat(2,minmax(0,1fr))}}';
+  document.head.appendChild(style);
+
+  const ensureV105Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV105Base();
+    if(!S)return;
+    S.managerRelations=S.managerRelations||{};
+    S.managerMemoryFeed=S.managerMemoryFeed||[];
+    S.managerProspects=S.managerProspects||{};
+    S.managerClubs=S.managerClubs||[];
+    S.managerLegacy={
+      youthPromotions:0,youthDebuts:0,promisesKept:0,promisesBroken:0,
+      captainsNamed:0,talks:0,hardDecisions:0,requestsAccepted:0,
+      requestsRejected:0,reunions:0,...(S.managerLegacy||{})
+    };
+    if(S.club&&!S.managerClubs.includes(S.club))S.managerClubs.push(S.club);
+    for(const p of getClubPlayers(S.club))touchRelationV105(p,S.club);
+  };
+
+  function relationKeyV105(p){return String(p?.id||'')}
+  function touchRelationV105(p,club){
+    if(!p||!p.id)return null;
+    S.managerRelations=S.managerRelations||{};
+    const k=relationKeyV105(p);
+    const rel=S.managerRelations[k]||(S.managerRelations[k]={score:0,memories:[],clubs:[],firstMet:S.date,lastInteraction:S.date});
+    rel.memories=rel.memories||[];
+    rel.clubs=rel.clubs||[];
+    if(club&&!rel.clubs.includes(club))rel.clubs.push(club);
+    return rel;
+  }
+  function relationV105(p){return p?touchRelationV105(p,null):null}
+  function relClassV105(score){return score>=20?'good':score<=-20?'bad':'neutral'}
+  function relLabelV105(score){
+    if(score>=70)return'Muy unido';
+    if(score>=40)return'Buena relación';
+    if(score>=15)return'Positiva';
+    if(score<=-70)return'Rota';
+    if(score<=-40)return'Mala relación';
+    if(score<=-15)return'Tensa';
+    return'Neutral';
+  }
+  function recordRelationV105(p,delta,type,text,club){
+    if(!p)return;
+    const rel=touchRelationV105(p,club||S.club);
+    if(!rel)return;
+    rel.score=clamp((rel.score||0)+delta,-100,100);
+    rel.lastInteraction=S.date;
+    const m={date:S.date,type,text,club:club||S.club,delta};
+    rel.memories.unshift(m);
+    rel.memories=rel.memories.slice(0,16);
+    S.managerMemoryFeed=S.managerMemoryFeed||[];
+    S.managerMemoryFeed.unshift({playerId:p.id,player:p.name,...m,score:rel.score});
+    S.managerMemoryFeed=S.managerMemoryFeed.slice(0,100);
+  }
+
+  function identityV105(){
+    const L=S.managerLegacy||{};
+    const cr=S.careerRecord||S.record||{};
+    const options=[
+      {name:'Formador',desc:'Confía en cantera y desarrolla jóvenes.',score:(L.youthDebuts||0)*5+(L.youthPromotions||0)*2},
+      {name:'Gestor humano',desc:'Construye relaciones fuertes con sus jugadores.',score:(L.talks||0)*2+(L.requestsAccepted||0)*1.2},
+      {name:'Hombre de palabra',desc:'Cumple lo que promete al vestuario.',score:(L.promisesKept||0)*4-(L.promisesBroken||0)*3},
+      {name:'Mano firme',desc:'No evita decisiones difíciles.',score:(L.hardDecisions||0)*3+(L.requestsRejected||0)*1.5},
+      {name:'Constructor de líderes',desc:'Da responsabilidad a referentes del vestuario.',score:(L.captainsNamed||0)*4},
+      {name:'Entrenador viajero',desc:'Ha construido su carrera en varios clubes.',score:Math.max(0,(S.managerClubs?.length||1)-1)*5},
+      {name:'Ganador',desc:'Su identidad se apoya en resultados y títulos.',score:(cr.trophies||0)*6+Math.floor((cr.w||0)/12)}
+    ].sort((a,b)=>b.score-a.score);
+    const picked=options.filter(x=>x.score>0).slice(0,3);
+    return picked.length?picked:[{name:'En construcción',desc:'Tu forma de entrenar todavía se está definiendo.',score:0}];
+  }
+  window.managerIdentityV105=identityV105;
+
+  function relationSummaryHTMLV105(p){
+    const rel=relationV105(p);
+    if(!rel||(!(rel.memories||[]).length&&!rel.score))return'';
+    const last=rel.memories?.[0];
+    return '<div class="known-player-v105"><span>🧠 '+esc(relLabelV105(rel.score||0))+'</span><span>· '+((rel.score||0)>0?'+':'')+(rel.score||0)+'</span>'+(last?'<span>· '+esc(last.text)+'</span>':'')+'</div>';
+  }
+
+  function openRelationshipV105(id){
+    const p=S.players.find(x=>String(x.id)===String(id));
+    const rel=p&&relationV105(p);
+    if(!p||!rel)return;
+    els.matchBox.innerHTML=
+      '<div class="row"><h2>🧠 Historia con '+esc(p.name)+'</h2><span class="spacer"></span><button class="btn ghost" id="closeRelV105">Cerrar</button></div>'+
+      '<div class="legacy-grid-v105">'+
+        '<div class="legacy-kpi-v105"><small>Relación</small><strong>'+((rel.score||0)>0?'+':'')+(rel.score||0)+'</strong></div>'+
+        '<div class="legacy-kpi-v105"><small>Estado</small><strong style="font-size:14px">'+esc(relLabelV105(rel.score||0))+'</strong></div>'+
+        '<div class="legacy-kpi-v105"><small>Clubes juntos</small><strong>'+(rel.clubs?.length||0)+'</strong></div>'+
+        '<div class="legacy-kpi-v105"><small>Recuerdos</small><strong>'+(rel.memories?.length||0)+'</strong></div>'+
+      '</div>'+
+      '<div class="card"><h3>Lo que recuerda</h3>'+
+        ((rel.memories||[]).length?rel.memories.map(m=>'<div class="memory-line-v105"><strong>'+esc(m.text)+'</strong><div class="muted">'+dateStr(m.date)+' · '+esc(m.club||'')+' · '+(m.delta>0?'+':'')+m.delta+' relación</div></div>').join(''):'<div class="empty">Aún no hay un momento importante entre vosotros.</div>')+
+      '</div>';
+    els.matchModal.classList.remove('hidden');
+    $('#closeRelV105').onclick=()=>els.matchModal.classList.add('hidden');
+  }
+  window.openRelationshipV105=openRelationshipV105;
+
+  const evaluatePromisesV105Base=evaluatePromisesV7;
+  evaluatePromisesV7=function(date=S.date,seasonEnd=false){
+    const before=new Map((S.playerPromises||[]).filter(x=>x.status==='active').map(x=>[x.id,{playerId:x.playerId,type:x.type}]));
+    evaluatePromisesV105Base(date,seasonEnd);
+    for(const [id,b] of before){
+      const pr=(S.playerPromises||[]).find(x=>x.id===id);
+      const p=S.players.find(x=>x.id===b.playerId);
+      if(!pr||!p)continue;
+      if(pr.status==='done'){
+        S.managerLegacy.promisesKept=(S.managerLegacy.promisesKept||0)+1;
+        recordRelationV105(p,12,'promise_kept','Cumpliste una promesa importante');
+      }else if(pr.status==='broken'){
+        S.managerLegacy.promisesBroken=(S.managerLegacy.promisesBroken||0)+1;
+        recordRelationV105(p,-20,'promise_broken','Incumpliste una promesa importante');
+      }
+    }
+  };
+
+  const promoteYouthV105Base=promoteYouth;
+  promoteYouth=function(id){
+    const before=new Set(S.players.map(p=>String(p.id)));
+    const oldClub=S.club;
+    promoteYouthV105Base(id);
+    const p=S.players.find(x=>!before.has(String(x.id))&&x.club===oldClub);
+    if(p){
+      S.managerLegacy.youthPromotions=(S.managerLegacy.youthPromotions||0)+1;
+      S.managerProspects[p.id]={promoted:S.date,club:oldClub,debutRecorded:false};
+      recordRelationV105(p,8,'promotion','Le abriste la puerta del primer equipo',oldClub);
+      save();
+    }
+  };
+
+  const postMatchV105Base=postMatchV7;
+  postMatchV7=function(M,myGoals,oppGoals,f){
+    postMatchV105Base(M,myGoals,oppGoals,f);
+    if(f.comp==='Pretemporada')return;
+    const used=new Set([...(M.startingXI||[]),...(M.subLog||[]).map(s=>s.inId)]);
+    for(const id of used){
+      const pr=S.managerProspects?.[id];
+      const p=S.players.find(x=>x.id===id);
+      if(pr&&p&&!pr.debutRecorded&&(p.appearances||0)>=1){
+        pr.debutRecorded=true;pr.debutDate=S.date;
+        S.managerLegacy.youthDebuts=(S.managerLegacy.youthDebuts||0)+1;
+        recordRelationV105(p,15,'debut','Le diste su debut profesional',pr.club||S.club);
+        addNews('Un debut que deja huella',p.name+' debuta contigo y empieza a construir una historia ligada a tu carrera.','carrera');
+      }
+    }
+  };
+
+  const switchClubV105Base=switchClub;
+  switchClub=function(club,lid,budget){
+    ensureV7State();
+    const oldClub=S.club;
+    for(const p of getClubPlayers(oldClub))touchRelationV105(p,oldClub);
+    switchClubV105Base(club,lid,budget);
+    if(club&&!S.managerClubs.includes(club))S.managerClubs.push(club);
+    for(const p of getClubPlayers(club))touchRelationV105(p,club);
+    save();
+  };
+
+  const acceptBidV105Base=acceptIncomingBid;
+  acceptIncomingBid=function(id){
+    const b=S.pendingBids.find(x=>x.id===id&&x.status==='pending');
+    const p=b&&S.players.find(x=>x.id===b.playerId);
+    if(p){
+      if(p.wantsOut||p.transferListed)recordRelationV105(p,3,'sale','Respetaste su deseo de buscar un nuevo reto');
+      else recordRelationV105(p,-10,'sale','Aceptaste una oferta y le abriste la puerta de salida');
+    }
+    acceptBidV105Base(id);
+    save();
+  };
+
+  const rejectBidV105Base=rejectIncomingBid;
+  rejectIncomingBid=function(id){
+    const b=S.pendingBids.find(x=>x.id===id&&x.status==='pending');
+    const p=b&&S.players.find(x=>x.id===b.playerId);
+    if(p&&p.wantsOut)recordRelationV105(p,-7,'blocked_exit','Bloqueaste una oferta cuando quería marcharse');
+    rejectBidV105Base(id);
+    save();
+  };
+
+  const renewV105Base=openRenewContractV7;
+  openRenewContractV7=function(id){
+    const p=S.players.find(x=>String(x.id)===String(id));
+    const oldUntil=p?.contractUntil;
+    renewV105Base(id);
+    const btn=els.matchBox.querySelector('#sendRenew');
+    if(!btn||!p)return;
+    const oldClick=btn.onclick;
+    btn.onclick=function(e){
+      if(typeof oldClick==='function')oldClick.call(this,e);
+      if(p.contractUntil&&p.contractUntil!==oldUntil){
+        recordRelationV105(p,8,'renewal','Apostaste por su continuidad con una renovación');
+        save();
+      }
+    };
+  };
+
+  const negotiationV105Base=openTransferNegotiation;
+  openTransferNegotiation=function(id){
+    const p=S.players.find(x=>String(x.id)===String(id));
+    negotiationV105Base(id);
+    if(!p||p.club===S.club)return;
+    const rel=relationV105(p);
+    if(!rel)return;
+    const known=(rel.clubs||[]).length>0&&(rel.memories||[]).length>0;
+    if(known){
+      const box=document.createElement('div');
+      box.className='neg-memory-v105';
+      const last=rel.memories?.[0];
+      box.innerHTML='<strong>🧠 Ya existe una historia entre vosotros</strong><div class="muted">Relación '+((rel.score||0)>0?'+':'')+(rel.score||0)+' · '+esc(relLabelV105(rel.score||0))+(last?' · Último recuerdo: '+esc(last.text):'')+'</div>';
+      const send=els.matchBox.querySelector('#sendNeg');
+      if(send)send.insertAdjacentElement('beforebegin',box);
+    }
+    const btn=els.matchBox.querySelector('#sendNeg');
+    if(!btn||!known)return;
+    const oldClick=btn.onclick;
+    btn.onclick=function(e){
+      const score=rel.score||0;
+      if(score<=-55&&Math.random()<.55){
+        toast(p.name+' no quiere volver a trabajar contigo por vuestra relación pasada.');
+        recordRelationV105(p,-2,'refusal','Rechazó la posibilidad de volver a trabajar contigo');
+        save();
+        return;
+      }
+      const originalWage=p.wage;
+      if(score!==0)p.wage=Math.max(100,Math.round((p.wage||1000)*(1-clamp(score,-70,70)/260)));
+      const beforeClub=p.club;
+      if(typeof oldClick==='function')oldClick.call(this,e);
+      const success=beforeClub!==S.club&&p.club===S.club;
+      if(!success)p.wage=originalWage;
+      if(success){
+        S.managerLegacy.reunions=(S.managerLegacy.reunions||0)+1;
+        recordRelationV105(p,score>=0?10:5,'reunion','Volvisteis a trabajar juntos en '+S.club);
+        addNews('Reencuentro',p.name+' vuelve a ponerse a tus órdenes. Vuestra historia previa ha pesado en la decisión.','carrera');
+      }
+      save();
+    };
+  };
+
+  const renderDressingV105Base=renderDressing;
+  renderDressing=function(){
+    ensureV7State();
+    renderDressingV105Base();
+
+    els.view.querySelectorAll('.reqActV103').forEach(b=>{
+      const old=b.onclick;
+      b.onclick=function(e){
+        const r=(S.playerRequests||[]).find(x=>x.id===b.dataset.id&&x.status==='pending');
+        const p=r&&S.players.find(x=>x.id===r.playerId);
+        const choice=b.dataset.c;
+        if(p&&r){
+          if(choice==='accept'){
+            S.managerLegacy.requestsAccepted=(S.managerLegacy.requestsAccepted||0)+1;
+            const delta=r.type==='captain'?14:r.type==='exit'?4:9;
+            recordRelationV105(p,delta,'request_accept','Escuchaste y aceptaste su petición');
+          }else if(choice==='talk'){
+            S.managerLegacy.talks=(S.managerLegacy.talks||0)+1;
+            recordRelationV105(p,4,'talk','Te sentaste a hablar sobre su situación');
+          }else{
+            S.managerLegacy.requestsRejected=(S.managerLegacy.requestsRejected||0)+1;
+            S.managerLegacy.hardDecisions=(S.managerLegacy.hardDecisions||0)+1;
+            recordRelationV105(p,r.type==='exit'?-15:r.type==='captain'?-10:-7,'request_reject','Rechazaste una petición personal');
+          }
+        }
+        if(typeof old==='function')old.call(this,e);
+      };
+    });
+
+    els.view.querySelectorAll('.issueAct').forEach(b=>{
+      const old=b.onclick;
+      b.onclick=function(e){
+        const it=(S.playerIssues||[]).find(x=>x.id===b.dataset.id&&x.status==='open');
+        const p=it&&S.players.find(x=>x.id===it.playerId);
+        const choice=b.dataset.c;
+        if(p){
+          if(choice==='talk'){
+            S.managerLegacy.talks=(S.managerLegacy.talks||0)+1;
+            recordRelationV105(p,5,'talk','Le escuchaste cuando estaba descontento');
+          }else if(choice==='promise')recordRelationV105(p,4,'promise','Le diste tu palabra para mejorar su situación');
+          else if(choice==='firm'){
+            S.managerLegacy.hardDecisions=(S.managerLegacy.hardDecisions||0)+1;
+            recordRelationV105(p,-4,'firm','Fuiste firme ante sus quejas');
+          }else if(choice==='exit')recordRelationV105(p,2,'exit','Aceptaste facilitarle una salida');
+        }
+        if(typeof old==='function')old.call(this,e);
+      };
+    });
+
+    els.view.querySelectorAll('.makeCap').forEach(b=>{
+      const old=b.onclick;
+      b.onclick=function(e){
+        const oldCap=S.players.find(x=>x.id===S.captainId);
+        const p=S.players.find(x=>String(x.id)===String(b.dataset.id));
+        if(p&&p.id!==S.captainId){
+          S.managerLegacy.captainsNamed=(S.managerLegacy.captainsNamed||0)+1;
+          recordRelationV105(p,12,'captain','Le confiaste el brazalete de capitán');
+          if(oldCap&&oldCap.id!==p.id)recordRelationV105(oldCap,-3,'captain_change','Le retiraste la capitanía');
+        }
+        if(typeof old==='function')old.call(this,e);
+      };
+    });
+
+    const cards=els.view.querySelectorAll('.room-player-v102');
+    const squad=getClubPlayers(S.club).slice().sort((a,b)=>(a.morale||70)-(b.morale||70)).slice(0,8);
+    cards.forEach((node,i)=>{
+      const p=squad[i],rel=p&&relationV105(p);
+      if(!p||!rel)return;
+      const info=document.createElement('div');
+      info.className='known-player-v105';
+      info.textContent='🧠 Relación '+((rel.score||0)>0?'+':'')+(rel.score||0);
+      node.firstElementChild?.appendChild(info);
+    });
+  };
+
+  const renderSquadV105Base=renderSquad;
+  renderSquad=function(){
+    ensureV7State();
+    renderSquadV105Base();
+    const ps=getClubPlayers(S.club).sort((a,b)=>b.overall-a.overall);
+    const cards=[...els.view.querySelectorAll('.mobile-cards .player-card')];
+    const rows=[...els.view.querySelectorAll('.tablewrap tbody tr')];
+    ps.forEach((p,i)=>{
+      const rel=relationV105(p);
+      if(!rel)return;
+      const html='<span class="known-player-v105">🧠 '+esc(relLabelV105(rel.score||0))+' '+((rel.score||0)>0?'+':'')+(rel.score||0)+'</span>';
+      if(cards[i])cards[i].insertAdjacentHTML('beforeend',html);
+      if(rows[i]?.cells?.[0])rows[i].cells[0].insertAdjacentHTML('beforeend','<br>'+html);
+    });
+  };
+
+  const renderCareerV105Base=renderCareerV7;
+  renderCareerV7=function(){
+    ensureV7State();
+    renderCareerV105Base();
+    const identities=identityV105();
+    const relations=Object.entries(S.managerRelations||{}).map(([id,r])=>{
+      const p=S.players.find(x=>String(x.id)===String(id));
+      return p?{p,r}:null;
+    }).filter(Boolean).filter(x=>(x.r.memories||[]).length||x.r.score);
+    const positives=relations.filter(x=>(x.r.score||0)>0).sort((a,b)=>(b.r.score||0)-(a.r.score||0)).slice(0,5);
+    const tensions=relations.filter(x=>(x.r.score||0)<0).sort((a,b)=>(a.r.score||0)-(b.r.score||0)).slice(0,4);
+    const L=S.managerLegacy||{};
+
+    const card=document.createElement('div');
+    card.className='card';
+    card.style.marginTop='14px';
+    card.innerHTML=
+      '<div class="row"><h3 style="margin:0">🧠 Tu legado como entrenador</h3><span class="spacer"></span><span class="badge">'+(S.managerClubs?.length||1)+' club'+((S.managerClubs?.length||1)===1?'':'es')+'</span></div>'+
+      '<div class="identity-tags-v105">'+identities.map(x=>'<span class="identity-tag-v105" title="'+esc(x.desc)+'">'+esc(x.name)+'</span>').join('')+'</div>'+
+      '<div class="muted">'+identities.map(x=>esc(x.desc)).join(' · ')+'</div>'+
+      '<div class="legacy-grid-v105">'+
+        '<div class="legacy-kpi-v105"><small>Canteranos debutados</small><strong>'+(L.youthDebuts||0)+'</strong></div>'+
+        '<div class="legacy-kpi-v105"><small>Promesas cumplidas</small><strong>'+(L.promisesKept||0)+'</strong></div>'+
+        '<div class="legacy-kpi-v105"><small>Promesas rotas</small><strong>'+(L.promisesBroken||0)+'</strong></div>'+
+        '<div class="legacy-kpi-v105"><small>Reencuentros</small><strong>'+(L.reunions||0)+'</strong></div>'+
+      '</div>'+
+      '<div class="grid2">'+
+        '<div><h3>Vínculos fuertes</h3>'+(positives.length?positives.map(x=>'<div class="relation-v105"><div><strong>'+esc(x.p.name)+'</strong><div class="muted">'+esc(x.r.memories?.[0]?.text||'Ha trabajado contigo')+'</div></div><button class="rel-score-v105 good openRelV105" data-id="'+x.p.id+'">+'+(x.r.score||0)+'</button></div>').join(''):'<div class="empty">Todavía no has creado vínculos fuertes.</div>')+'</div>'+
+        '<div><h3>Relaciones tensas</h3>'+(tensions.length?tensions.map(x=>'<div class="relation-v105"><div><strong>'+esc(x.p.name)+'</strong><div class="muted">'+esc(x.r.memories?.[0]?.text||'La relación se deterioró')+'</div></div><button class="rel-score-v105 bad openRelV105" data-id="'+x.p.id+'">'+(x.r.score||0)+'</button></div>').join(''):'<div class="empty">No tienes relaciones especialmente tensas.</div>')+'</div>'+
+      '</div>'+
+      '<div class="sep"></div><h3>Recuerdos recientes de tu carrera</h3>'+
+      ((S.managerMemoryFeed||[]).slice(0,7).length?(S.managerMemoryFeed||[]).slice(0,7).map(m=>'<div class="memory-line-v105"><strong>'+esc(m.player)+'</strong> · '+esc(m.text)+'<div class="muted">'+dateStr(m.date)+' · '+esc(m.club||'')+' · '+(m.delta>0?'+':'')+m.delta+'</div></div>').join(''):'<div class="empty">Tus decisiones importantes empezarán a escribirse aquí.</div>');
+    els.view.appendChild(card);
+    card.querySelectorAll('.openRelV105').forEach(b=>b.onclick=()=>openRelationshipV105(b.dataset.id));
+  };
+})();
+
 loadDB();
 })();
 </script>
