@@ -4284,6 +4284,174 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== COMPACT VISUAL UI 10.8 =====
+// Menos scroll, más información visible y paneles rápidos en pantallas cargadas.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.compact-viewbar-v108{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:18;padding:6px;margin:0 0 9px;background:#07110df2;border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(10px)}'+
+    '.compact-viewbar-v108::-webkit-scrollbar{display:none}'+
+    '.compact-tab-v108{border:1px solid var(--line);background:#0c1a13;color:var(--muted);border-radius:999px;padding:7px 10px;font-size:11px;font-weight:850;white-space:nowrap;cursor:pointer}'+
+    '.compact-tab-v108.active{background:var(--accent);color:#07110d;border-color:var(--accent)}'+
+    '.compact-section-v108.v108-hidden{display:none!important}'+
+    '.transfer-panels-v108{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 0 9px}'+
+    '.transfer-panels-v108::-webkit-scrollbar{display:none}'+
+    '.compact-player-hint-v108{font-size:9px;color:var(--accent);margin-top:5px;font-weight:800}'+
+    '.compact-player-v108{cursor:pointer;transition:.15s}'+
+    '.compact-player-v108:hover{border-color:#40664d}'+
+    '.compact-player-v108.expanded-v108{border-color:#4f8562;background:#0d1e15}'+
+    '@media(min-width:951px){'+
+      '.app{max-width:1700px;padding:10px}.brand{margin-bottom:8px}.brand h1{font-size:24px}.topbar{gap:7px;margin-bottom:8px}.stat{padding:8px 10px}.stat strong{margin-top:2px;font-size:14px}'+
+      '.layout{grid-template-columns:188px minmax(0,1fr);gap:8px}.sidebar{padding:6px}.navbtn{padding:8px 9px;margin:2px 0}.view{padding:11px}.view h2{margin-bottom:9px;font-size:21px}'+
+      '.card{padding:10px}.card h3{margin-bottom:7px}.grid2,.grid3{gap:8px}.big{font-size:26px}.fixture{padding:7px 0}.msg{padding:8px}.job-card{padding:8px}.issue-card,.staff-card,.promise-card,.world-card,.achievement-card,.draw-card{padding:9px}'+
+      '.advance-panel{padding:9px;margin:8px 0}.advance-actions{margin-top:7px}.advance-actions .btn{min-height:39px;padding:8px 11px}.stop-grid{margin-top:8px;padding-top:8px}.timeline-day{min-height:72px;padding:6px}'+
+      '.quick-actions .btn{min-height:44px}.tablewrap{max-height:68vh}th,td{padding:7px 8px}.commentary{height:220px}.subs{max-height:300px}.scoreboard{padding:11px}.score{font-size:45px}'+
+      '.transfer-grid>.card{max-height:68vh;overflow:auto}.network-list-v106{max-height:250px}'+
+    '}'+
+    '@media(max-width:950px){'+
+      '.app{padding:6px 6px 82px}.brand{margin:0 2px 6px}.brand h1{font-size:20px}.topbar{display:flex!important;overflow-x:auto;gap:5px;margin-bottom:6px;padding-bottom:2px;scrollbar-width:none}.topbar::-webkit-scrollbar{display:none}'+
+      '.topbar .stat{display:block!important;flex:0 0 116px;padding:7px 8px}.topbar .stat small{font-size:9px}.topbar .stat strong{font-size:12px;margin-top:2px}.view{padding:8px}.view h2{font-size:19px;margin-bottom:8px}'+
+      '.card{padding:9px;border-radius:11px}.card h3{margin-bottom:6px}.grid2,.grid3{gap:7px}.view>.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.view>.grid3>.card{padding:7px}.view>.grid3 .big{font-size:22px}.view>.grid3 .muted,.view>.grid3 small{font-size:9px}'+
+      '.advance-panel{padding:8px;margin:7px 0}.advance-date{font-size:19px}.timeline-day{min-height:68px;padding:6px}.quick-actions .btn{min-height:44px;padding:8px}.msg,.job-card{padding:8px}'+
+      '.compact-viewbar-v108{top:0;margin-left:-2px;margin-right:-2px;padding:5px}.compact-tab-v108{padding:7px 9px}.transfer-grid>.card{max-height:340px;overflow:auto}'+
+      '.compact-squad-grid-v108{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.compact-player-v108{padding:8px;min-width:0}.compact-player-v108 .player-card-head{align-items:flex-start}.compact-player-v108 .rating{width:30px;height:30px;font-size:12px;flex:0 0 auto}'+
+      '.compact-player-v108 .player-card-grid,.compact-player-v108 .compact-detail-v108{display:none}.compact-player-v108.expanded-v108{grid-column:1/-1}.compact-player-v108.expanded-v108 .player-card-grid{display:grid}.compact-player-v108.expanded-v108 .compact-detail-v108{display:block}'+
+      '.compact-player-v108 .player-card-head .muted{font-size:9px}.player-card-grid{gap:5px;margin-top:7px}.mini-kpi{padding:5px}.commentary{height:155px}.flow-pitch-v95{height:112px!important}.modalbox{max-height:92vh;padding:9px}.match-shell{gap:7px}.scoreboard{padding:9px}.score{font-size:36px}.live-stats{margin:6px 0}.live-stats>div{padding:5px}'+
+      '.decision-actions-v107{gap:5px}.decision-actions-v107 .btn{min-height:44px;padding:8px 10px}.match-decision-v107{padding:10px;margin:7px 0}.decision-icon-v107{font-size:22px}'+
+    '}'+
+    '@media(max-width:370px){.compact-squad-grid-v108{grid-template-columns:1fr}.view>.grid3{grid-template-columns:1fr 1fr 1fr}.topbar .stat{flex-basis:108px}}';
+  document.head.appendChild(style);
+
+  const sectionStateV108={};
+
+  function cleanLabelV108(s){
+    return String(s||'').replace(/\s+/g,' ').replace(/[🎯🧠🌍🤝🎙️👔🏆📈🩺🌱📝💼]/g,'').trim().slice(0,30);
+  }
+  function sectionLabelV108(el,i){
+    if(el.classList.contains('grid3'))return'Resumen';
+    const hs=[...el.querySelectorAll('h3')].map(x=>cleanLabelV108(x.textContent)).filter(Boolean);
+    if(hs.length>=2)return (hs[0]+' / '+hs[1]).slice(0,30);
+    if(hs.length)return hs[0];
+    if(el.classList.contains('grid2'))return'Gestión';
+    if(el.classList.contains('staff-grid'))return'Staff';
+    if(el.classList.contains('world-grid'))return'Mundo';
+    if(el.classList.contains('achievement-grid'))return'Logros';
+    if(el.classList.contains('room-kpis-v102'))return'Vestuario';
+    return'Sección '+(i+1);
+  }
+
+  function installSectionTabsV108(name){
+    const enabled=new Set(['dressing','career','world','academy','contracts','staff','development','news','awards','achievements']);
+    if(!enabled.has(name))return;
+
+    const sections=[...els.view.children].filter(el=>{
+      if(el.tagName!=='DIV')return false;
+      if(el.classList.contains('row')||el.classList.contains('compact-viewbar-v108')||el.classList.contains('transfer-tabs'))return false;
+      if(el.classList.contains('mobile-cards')||el.classList.contains('tablewrap'))return false;
+      return true;
+    });
+    if(sections.length<3)return;
+
+    sections.forEach(el=>el.classList.add('compact-section-v108'));
+    const bar=document.createElement('div');
+    bar.className='compact-viewbar-v108';
+    const labels=sections.map((el,i)=>sectionLabelV108(el,i));
+    const state=sectionStateV108[name]??0;
+
+    function show(index){
+      sectionStateV108[name]=index;
+      sections.forEach((el,i)=>el.classList.toggle('v108-hidden',index!=='all'&&i!==index));
+      bar.querySelectorAll('.compact-tab-v108').forEach(b=>b.classList.toggle('active',String(index)===b.dataset.i));
+    }
+
+    labels.forEach((label,i)=>{
+      const b=document.createElement('button');
+      b.className='compact-tab-v108';
+      b.dataset.i=String(i);
+      b.textContent=label;
+      b.onclick=()=>show(i);
+      bar.appendChild(b);
+    });
+    const all=document.createElement('button');
+    all.className='compact-tab-v108';
+    all.dataset.i='all';
+    all.textContent='Todo';
+    all.onclick=()=>show('all');
+    bar.appendChild(all);
+
+    const title=[...els.view.children].find(el=>el.tagName==='H2'||el.classList.contains('row'));
+    if(title)title.insertAdjacentElement('afterend',bar);else els.view.prepend(bar);
+    show(state==='all'||Number(state)<sections.length?state:0);
+  }
+
+  function installSquadCompactV108(){
+    const wrap=els.view.querySelector('.mobile-cards');
+    if(!wrap)return;
+    wrap.classList.add('compact-squad-grid-v108');
+    wrap.querySelectorAll('.player-card').forEach(card=>{
+      card.classList.add('compact-player-v108');
+      const detail=[...card.children].find(x=>x.classList.contains('muted'));
+      if(detail)detail.classList.add('compact-detail-v108');
+      if(!card.querySelector('.compact-player-hint-v108')){
+        const hint=document.createElement('div');
+        hint.className='compact-player-hint-v108';
+        hint.textContent='Toca para ver más';
+        card.appendChild(hint);
+      }
+      card.onclick=e=>{
+        if(e.target.closest('button,select,input,a'))return;
+        card.classList.toggle('expanded-v108');
+        const hint=card.querySelector('.compact-player-hint-v108');
+        if(hint)hint.textContent=card.classList.contains('expanded-v108')?'Toca para cerrar':'Toca para ver más';
+      };
+    });
+  }
+
+  function installTransferPanelsV108(){
+    const grid=els.view.querySelector('.transfer-grid');
+    const top=els.view.querySelector('.transfer-tabs');
+    if(!grid||!top)return;
+    const left=grid.children[0],exitCard=grid.children[1];
+    if(!left||!exitCard)return;
+    const cards=[...left.children].filter(x=>x.classList.contains('card'));
+    if(cards.length<3)return;
+    const panels=[cards[0],cards[1],cards[2],exitCard];
+    const labels=['🔎 Buscar','⭐ Seguimiento','🔁 Movimientos','🚪 Salidas'];
+    const bar=document.createElement('div');
+    bar.className='transfer-panels-v108';
+
+    function show(i){
+      panels.forEach((p,j)=>p.style.display=j===i?'':'none');
+      bar.querySelectorAll('.compact-tab-v108').forEach((b,j)=>b.classList.toggle('active',j===i));
+    }
+    labels.forEach((label,i)=>{
+      const b=document.createElement('button');
+      b.className='compact-tab-v108'+(i===0?' active':'');
+      b.textContent=label;
+      b.onclick=()=>show(i);
+      bar.appendChild(b);
+    });
+    top.insertAdjacentElement('afterend',bar);
+    top.addEventListener('click',e=>{
+      if(e.target.closest('#showSearch,#showFree,#showYoung,.qWorld'))show(0);
+    },true);
+    show(0);
+  }
+
+  function enhanceV108(name){
+    if(name==='squad')installSquadCompactV108();
+    if(name==='transfers')installTransferPanelsV108();
+    installSectionTabsV108(name);
+  }
+
+  const renderV108Base=render;
+  render=function(name){
+    renderV108Base(name);
+    enhanceV108(name);
+  };
+})();
+
 loadDB();
 })();
 </script>
