@@ -7223,6 +7223,375 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== CLUB SQUAD PLANNING AI 10.18 =====
+// Los clubes analizan plantilla, presupuesto, entrenador y directiva antes de fichar o vender.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.club-ai-v118{margin-top:10px}.club-ai-grid-v118{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:8px}'+
+    '.club-ai-card-v118{padding:9px;border:1px solid var(--line);border-radius:10px;background:#09150f;min-width:0}'+
+    '.club-ai-card-v118 strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+    '.club-ai-need-v118{font-size:10px;color:#ffd276;font-weight:900;margin-top:4px}'+
+    '.club-ai-money-v118{font-size:10px;color:var(--muted);margin-top:2px}'+
+    '.club-ai-move-v118{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:7px 0;border-bottom:1px solid #1b2c23}.club-ai-move-v118:last-child{border-bottom:0}'+
+    '.ai-bid-reason-v118{font-size:9px;color:#b9c9bf;margin-top:3px}'+
+    '@media(max-width:760px){.club-ai-grid-v118{grid-template-columns:1fr 1fr}.club-ai-card-v118:last-child{grid-column:1/-1}}';
+  document.head.appendChild(style);
+
+  const GROUPS_V118={
+    GK:/GK/,
+    DEF:/CB|LB|RB|LWB|RWB/,
+    MID:/CDM|CM/,
+    WIDE:/CAM|LW|RW|LM|RM/,
+    ST:/ST|CF/
+  };
+  const GROUP_LABEL_V118={GK:'portero',DEF:'defensa',MID:'centrocampista',WIDE:'jugador de banda / creativo',ST:'delantero'};
+
+  function aiV118(){
+    S.clubAIV118=S.clubAIV118||{season:null,clubs:{},moves:[],lastWeekly:null,lastDaily:null};
+    S.clubAIV118.clubs=S.clubAIV118.clubs||{};
+    S.clubAIV118.moves=S.clubAIV118.moves||[];
+    return S.clubAIV118;
+  }
+  function squadV118(club){
+    return (S.players||[]).filter(p=>p.club===club&&!p.parentClub&&p.club!=='Retirado');
+  }
+  function financeV118(club){
+    const w=aiV118();
+    if(!w.clubs[club]){
+      const base=budgetFor(club);
+      const pf=window.clubBoardProfileV117?.(club)||{ambition:3,trading:3};
+      w.clubs[club]={
+        budget:Math.max(1500000,Math.round(base*(.85+pf.ambition*.11+pf.trading*.04))),
+        reserved:0,
+        spent:0,sales:0,lastPlan:null,needs:[],season:S.season
+      };
+    }
+    return w.clubs[club];
+  }
+  function seasonBudgetsV118(){
+    const w=aiV118();
+    if(w.season===S.season)return;
+    const first=w.season==null;
+    for(const club of DB.clubs.keys()){
+      if(club===S.club)continue;
+      const f=financeV118(club),base=budgetFor(club),pf=window.clubBoardProfileV117?.(club)||{ambition:3,trading:3};
+      if(!first){
+        const injection=base*(.38+pf.ambition*.08)+(f.sales||0)*.12;
+        f.budget=Math.max(1000000,Math.round(f.budget+injection));
+        f.spent=0;f.sales=0;f.reserved=0;f.season=S.season;
+      }
+    }
+    w.season=S.season;
+  }
+  function groupOfV118(p){
+    const s=String(p?.positions||'');
+    if(GROUPS_V118.GK.test(s))return'GK';
+    if(GROUPS_V118.ST.test(s))return'ST';
+    if(GROUPS_V118.WIDE.test(s))return'WIDE';
+    if(GROUPS_V118.MID.test(s))return'MID';
+    return'DEF';
+  }
+  function targetCountsV118(style){
+    const base={GK:2,DEF:7,MID:5,WIDE:4,ST:3};
+    if(style==='Bloque bajo'){base.DEF=8;base.WIDE=3}
+    if(style==='Presión alta'){base.MID=6;base.ST=3}
+    if(style==='Transiciones'){base.WIDE=5;base.MID=4}
+    if(style==='Posesión'){base.MID=6;base.ST=2}
+    return base;
+  }
+  function groupQualityV118(players,g){
+    const ps=players.filter(p=>groupOfV118(p)===g).sort((a,b)=>b.overall-a.overall);
+    if(!ps.length)return 0;
+    const n=Math.min(ps.length,g==='GK'?1:g==='ST'?2:3);
+    return ps.slice(0,n).reduce((a,p)=>a+p.overall,0)/n;
+  }
+  function clubNeedsV118(club){
+    const ps=squadV118(club),pf=window.clubBoardProfileV117?.(club)||{ambition:3,youth:3,stars:2,trading:3};
+    const style=managerProfileV7(club)?.style||'Equilibrado';
+    const targets=targetCountsV118(style),rating=clubRatingDB(club);
+    const rows=[];
+    for(const g of Object.keys(GROUPS_V118)){
+      const count=ps.filter(p=>groupOfV118(p)===g).length,q=groupQualityV118(ps,g);
+      const shortage=Math.max(0,targets[g]-count);
+      const qGap=Math.max(0,(rating-(g==='GK'?1:0))-q);
+      let score=shortage*18+qGap*2.5;
+      if(g==='ST'&&pf.ambition>=4)score+=3;
+      if(g==='WIDE'&&style==='Transiciones')score+=4;
+      if(g==='MID'&&(style==='Posesión'||style==='Presión alta'))score+=4;
+      rows.push({group:g,count,target:targets[g],quality:q,score});
+    }
+    rows.sort((a,b)=>b.score-a.score);
+    return rows;
+  }
+  function planClubV118(club){
+    const f=financeV118(club),needs=clubNeedsV118(club);
+    f.needs=needs;f.lastPlan=S.date;
+    return needs;
+  }
+  function ageFitV118(p,pf){
+    let s=0;
+    if(pf.youth>=4){if(p.age<=23)s+=8;else if(p.age>=29)s-=7}
+    if(pf.stars>=4&&p.overall>=82)s+=8;
+    if(pf.trading>=4&&p.age<=24&&(p.potential||0)>p.overall+2)s+=7;
+    if(p.age>=32)s-=5;
+    return s;
+  }
+  function managerFitV118(p,club){
+    const style=managerProfileV7(club)?.style||'';
+    const g=groupOfV118(p);
+    if(style==='Bloque bajo'&&['DEF','GK'].includes(g))return 5;
+    if(style==='Transiciones'&&['WIDE','ST'].includes(g))return 5;
+    if(style==='Posesión'&&['MID','WIDE'].includes(g))return 5;
+    if(style==='Presión alta'&&p.age<=27&&['MID','WIDE','ST'].includes(g))return 4;
+    return 0;
+  }
+  function sellerWillingnessV118(p,from,fee){
+    const pf=window.clubBoardProfileV117?.(from)||{trading:3,youth:3,stars:2};
+    const ps=squadV118(from),g=groupOfV118(p);
+    const same=ps.filter(x=>groupOfV118(x)===g).sort((a,b)=>b.overall-a.overall);
+    const depth=same.length-(targetCountsV118(managerProfileV7(from)?.style||'')[g]||2);
+    const ratio=fee/Math.max(1,p.value||1);
+    let score=40+(ratio-1)*70+depth*11;
+    if(pf.trading>=4)score+=10;
+    if(pf.youth>=4&&p.age<=22&&(p.potential||0)>=82)score-=22;
+    if(pf.stars>=4&&p.overall>=82)score-=24;
+    if(p.age>=30)score+=10;
+    if(p.wantsOut||p.transferListed)score+=24;
+    return score;
+  }
+  function candidateScoreV118(p,buyer,need){
+    const pf=window.clubBoardProfileV117?.(buyer)||{youth:3,stars:2,trading:3};
+    const buyerRating=clubRatingDB(buyer);
+    let s=0;
+    s+=(p.overall-buyerRating)*2.3;
+    s+=Math.max(0,(p.potential||p.overall)-p.overall)*.8;
+    s+=ageFitV118(p,pf)+managerFitV118(p,buyer);
+    s+=need.score*.7;
+    if(p.club===buyer||p.club==='Retirado')s-=100;
+    if(p.club==='Agente libre')s+=6;
+    if(p.overall<buyerRating-8)s-=18;
+    return s+Math.random()*5;
+  }
+  function maxSpendV118(club){
+    const f=financeV118(club),pf=window.clubBoardProfileV117?.(club)||{ambition:3};
+    return Math.max(500000,(f.budget||0)-(f.reserved||0))*clamp(.55+pf.ambition*.07,.58,.9);
+  }
+  function targetPoolV118(buyer,need){
+    const max=maxSpendV118(buyer),buyerR=clubRatingDB(buyer);
+    return (S.players||[]).filter(p=>{
+      if(!p.club||p.club===buyer||p.club==='Retirado'||p.parentClub||p.age>=34)return false;
+      if(groupOfV118(p)!==need.group)return false;
+      if(p.club===S.club&&S.pendingBids?.some(b=>b.playerId===p.id&&b.status==='pending'))return false;
+      const price=p.club==='Agente libre'?Math.max(0,(p.wage||0)*250):Math.max(100000,p.value||0)*1.18;
+      if(price>max*1.35)return false;
+      return p.overall>=buyerR-10;
+    }).sort((a,b)=>candidateScoreV118(b,buyer,need)-candidateScoreV118(a,buyer,need)).slice(0,35);
+  }
+  function feeForV118(p,buyer){
+    if(p.club==='Agente libre')return 0;
+    const seller=window.clubBoardProfileV117?.(p.club)||{trading:3,stars:2,youth:3};
+    const buyer=window.clubBoardProfileV117?.(buyer)||{ambition:3};
+    let factor=.9+Math.random()*.25+seller.trading*.025+buyer.ambition*.015;
+    if(p.age<=23&&(p.potential||0)>=82)factor+=.08;
+    if(p.overall>=82&&seller.stars>=4)factor+=.10;
+    return Math.max(100000,Math.round((p.value||500000)*factor/50000)*50000);
+  }
+  function recordAIMoveV118(type,buyer,p,fee,reason,from){
+    const w=aiV118();
+    w.moves.unshift({date:S.date,type,buyer,player:p.name,playerId:p.id,from:from||p.club,fee,reason});
+    w.moves=w.moves.slice(0,100);
+  }
+  function createSmartBidToUserV118(buyer,p,fee,need){
+    const f=financeV118(buyer);
+    if(f.budget-f.reserved<fee)return false;
+    const id='AIP'+S.date+'-'+buyer+'-'+p.id;
+    if(S.pendingBids.some(b=>b.id===id||b.playerId===p.id&&b.status==='pending'))return false;
+    f.reserved+=fee;
+    S.pendingBids.push({
+      id,playerId:p.id,player:p.name,buyer,fee,date:S.date,status:'pending',
+      aiPlanV118:true,aiNeedV118:need.group,aiReasonV118:'Necesita '+GROUP_LABEL_V118[need.group]
+    });
+    pushDayEventV7(S.date,{type:'bid',text:buyer+' ofrece '+euro(fee)+' por '+p.name+' para reforzar '+GROUP_LABEL_V118[need.group]+'.'});
+    addNews('Oferta con planificación',buyer+' busca reforzar '+GROUP_LABEL_V118[need.group]+' y presenta '+euro(fee)+' por '+p.name+'.','mercado');
+    recordAIMoveV118('bid',buyer,p,fee,'Necesidad: '+GROUP_LABEL_V118[need.group],S.club);
+    return true;
+  }
+  function completeAITransferV118(buyer,p,fee,need){
+    const from=p.club,bf=financeV118(buyer),sf=from&&from!==S.club?financeV118(from):null;
+    if(bf.budget-bf.reserved<fee)return false;
+    if(from!=='Agente libre'&&sellerWillingnessV118(p,from,fee)<48)return false;
+
+    bf.budget-=fee;bf.spent=(bf.spent||0)+fee;
+    if(sf){sf.budget+=fee;sf.sales=(sf.sales||0)+fee}
+    p.club=buyer;p.leagueId=DB.clubs.get(buyer)?.leagueId||p.leagueId;p.leagueName=EURO_LEAGUES[p.leagueId]?.name||p.leagueName;
+    p.morale=clamp((p.morale||70)+rnd(0,7),20,100);
+    p.contractUntil=(contractYear()+rnd(3,5))+'-06-30';
+    p.wage=Math.max(p.wage||800,Math.round((p.wage||800)*(1.03+Math.random()*.22)));
+
+    S.worldTransfers.unshift({date:S.date,player:p.name,from,to:buyer,fee,type:'transfer',reason:'Necesidad de '+GROUP_LABEL_V118[need.group]});
+    S.worldTransfers=S.worldTransfers.slice(0,250);
+    recordAIMoveV118('transfer',buyer,p,fee,'Refuerzo de '+GROUP_LABEL_V118[need.group],from);
+    if(p.overall>=80||DB.clubs.get(buyer)?.leagueId===S.leagueId){
+      addNews('Fichaje planificado',buyer+' ficha a '+p.name+' desde '+from+' por '+euro(fee)+' para reforzar '+GROUP_LABEL_V118[need.group]+'.','mercado mundial');
+      pushDayEventV7(S.date,{type:'world',text:'🤝 '+buyer+' ficha a '+p.name+' · '+GROUP_LABEL_V118[need.group]+'.'});
+    }
+    return true;
+  }
+
+  function tryClubMoveV118(buyer){
+    if(buyer===S.club||!DB.clubs.has(buyer))return false;
+    const finance=financeV118(buyer);
+    if((finance.budget-finance.reserved)<500000)return false;
+    const needs=planClubV118(buyer),need=needs[0];
+    if(!need||need.score<5)return false;
+
+    const pool=targetPoolV118(buyer,need);
+    if(!pool.length)return false;
+    const p=pool[0],fee=feeForV118(p,buyer);
+    if(fee>finance.budget-finance.reserved)return false;
+
+    if(p.club===S.club)return createSmartBidToUserV118(buyer,p,fee,need);
+    return completeAITransferV118(buyer,p,fee,need);
+  }
+
+  function sellSurplusV118(club){
+    if(club===S.club)return false;
+    const ps=squadV118(club),pf=window.clubBoardProfileV117?.(club)||{trading:3,youth:3,stars:2};
+    if(ps.length<22)return false;
+    const needs=clubNeedsV118(club);
+    const over=needs.slice().sort((a,b)=>(b.count-b.target)-(a.count-a.target))[0];
+    if(!over||over.count<=over.target)return false;
+
+    const candidates=ps.filter(p=>groupOfV118(p)===over.group)
+      .sort((a,b)=>{
+        const sa=(a.age>=30?8:0)+(a.potential<=a.overall+1?4:0)-a.overall*.15;
+        const sb=(b.age>=30?8:0)+(b.potential<=b.overall+1?4:0)-b.overall*.15;
+        return sb-sa;
+      });
+    const p=candidates[0];if(!p)return false;
+    if(p.age<=22&&pf.youth>=4)return false;
+    if(p.overall>=82&&pf.stars>=4)return false;
+
+    const buyers=[...DB.clubs.keys()].filter(b=>b!==club&&b!==S.club&&maxSpendV118(b)>p.value*.75)
+      .map(b=>({b,need:clubNeedsV118(b).find(n=>n.group===over.group)}))
+      .filter(x=>x.need&&x.need.score>=4)
+      .sort((a,b)=>b.need.score-a.need.score);
+    if(!buyers.length)return false;
+    const pickBuyer=buyers[0],fee=feeForV118(p,pickBuyer.b);
+    return completeAITransferV118(pickBuyer.b,p,fee,pickBuyer.need);
+  }
+
+  function runWeeklyPlanningV118(date){
+    if(!isWindowOpen(date))return;
+    const d=new Date(date+'T12:00:00Z');
+    if(d.getUTCDay()!==1)return;
+    const w=aiV118();
+    if(w.lastWeekly===date)return;
+    w.lastWeekly=date;seasonBudgetsV118();
+
+    const clubs=[...DB.clubs.keys()].filter(c=>c!==S.club&&squadV118(c).length>=15);
+    const urgency=clubs.map(club=>{
+      const needs=planClubV118(club),f=financeV118(club),pf=window.clubBoardProfileV117?.(club)||{ambition:3};
+      return{club,score:(needs[0]?.score||0)+pf.ambition*2+Math.min(12,(f.budget||0)/5000000)+Math.random()*8};
+    }).sort((a,b)=>b.score-a.score);
+
+    const attempts=deadlineDayV113?.(date)?6:rnd(2,4);
+    let done=0;
+    for(const x of urgency){
+      if(done>=attempts)break;
+      if(tryClubMoveV118(x.club))done++;
+      else if(Math.random()<.22&&sellSurplusV118(x.club))done++;
+    }
+  }
+
+  // Desactiva el viejo fichaje mundial aleatorio: a partir de aquí manda la planificación.
+  simulateWorldTransferV7=function(){};
+
+  const ensureV118Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV118Base();
+    if(!S)return;
+    aiV118();
+    seasonBudgetsV118();
+  };
+
+  const worldDayV118Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV118Base(date);
+    ensureV7State();
+    runWeeklyPlanningV118(date);
+  };
+
+  const acceptBidV118Base=acceptIncomingBid;
+  acceptIncomingBid=function(id){
+    const b=S.pendingBids?.find(x=>String(x.id)===String(id)&&x.status==='pending');
+    const ai=b?.aiPlanV118?financeV118(b.buyer):null;
+    const reserved=b?.aiPlanV118?Math.min(b.fee||0,ai?.reserved||0):0;
+    acceptBidV118Base(id);
+    if(b?.aiPlanV118&&ai){
+      ai.reserved=Math.max(0,(ai.reserved||0)-reserved);
+      if(b.status==='accepted'){
+        ai.budget=Math.max(0,(ai.budget||0)-(b.fee||0));
+        ai.spent=(ai.spent||0)+(b.fee||0);
+        recordAIMoveV118('transfer',b.buyer,{id:b.playerId,name:b.player},b.fee,'Oferta aceptada por el usuario',S.club);
+      }
+      save();
+    }
+  };
+
+  const rejectBidV118Base=rejectIncomingBid;
+  rejectIncomingBid=function(id){
+    const b=S.pendingBids?.find(x=>String(x.id)===String(id)&&x.status==='pending');
+    const ai=b?.aiPlanV118?financeV118(b.buyer):null;
+    const reserved=b?.aiPlanV118?Math.min(b.fee||0,ai?.reserved||0):0;
+    rejectBidV118Base(id);
+    if(b?.aiPlanV118&&ai){
+      ai.reserved=Math.max(0,(ai.reserved||0)-reserved);
+      recordAIMoveV118('rejected',b.buyer,{id:b.playerId,name:b.player},b.fee,'Oferta rechazada por '+S.club,S.club);
+      save();
+    }
+  };
+
+  const renderTransfersV118Base=renderTransfersV7;
+  renderTransfersV7=function(){
+    renderTransfersV118Base();
+    els.view.querySelectorAll('.pending-bid').forEach(row=>{
+      const accept=row.querySelector('.bidAcceptV109');
+      if(!accept)return;
+      const b=S.pendingBids.find(x=>String(x.id)===String(accept.dataset.id));
+      if(!b?.aiPlanV118||row.querySelector('.ai-bid-reason-v118'))return;
+      const meta=row.querySelector('.muted');
+      if(meta)meta.insertAdjacentHTML('afterend','<div class="ai-bid-reason-v118">🧠 '+esc(b.aiReasonV118||'Planificación de plantilla')+'</div>');
+    });
+  };
+
+  const renderWorldV118Base=renderWorldV7;
+  renderWorldV7=function(){
+    renderWorldV118Base();
+    ensureV7State();
+    const w=aiV118();
+    const clubs=[...DB.clubs.keys()].filter(c=>c!==S.club&&squadV118(c).length>=15)
+      .map(club=>({club,f:financeV118(club),needs:planClubV118(club)}))
+      .sort((a,b)=>(b.needs[0]?.score||0)-(a.needs[0]?.score||0)).slice(0,6);
+    const moves=w.moves.slice(0,8);
+
+    const card=document.createElement('div');
+    card.className='card club-ai-v118';
+    card.innerHTML=
+      '<div class="row"><h3 style="margin:0">🧠 Planificación deportiva de clubes</h3><span class="spacer"></span><span class="badge">IA de plantilla</span></div>'+
+      '<div class="club-ai-grid-v118">'+clubs.slice(0,3).map(x=>{
+        const n=x.needs[0];
+        return '<div class="club-ai-card-v118"><strong>'+esc(x.club)+'</strong><div class="club-ai-need-v118">Busca: '+esc(n?GROUP_LABEL_V118[n.group]:'equilibrio de plantilla')+'</div><div class="club-ai-money-v118">Disponible aprox. '+euro(Math.max(0,(x.f.budget||0)-(x.f.reserved||0)))+'</div></div>';
+      }).join('')+'</div>'+
+      '<div style="margin-top:10px"><strong>Últimas decisiones IA</strong>'+
+        (moves.length?moves.map(m=>'<div class="club-ai-move-v118"><div><strong>'+esc(m.buyer)+'</strong><div class="muted">'+esc(m.player)+' · '+esc(m.reason||'Movimiento de plantilla')+'</div></div><span>'+euro(m.fee||0)+'</span></div>').join(''):'<div class="empty">Los clubes todavía están analizando sus plantillas.</div>')+
+      '</div>';
+    els.view.appendChild(card);
+  };
+})();
+
 loadDB();
 })();
 </script>
