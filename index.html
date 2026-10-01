@@ -6072,6 +6072,10 @@ loadDB=async function(){
     if(!force&&d.responseDate&&d.responseDate>date)return;
     const p=S.players.find(x=>String(x.id)===String(d.playerId));
     if(!p){d.status='failed';d.outcome='El jugador ya no está disponible.';return}
+    if(d.seller!=='Agente libre'&&p.club!==d.seller&&p.club!==S.club){
+      d.status='failed';d.outcome='Otro movimiento de mercado cambió la situación de '+p.name+'.';
+      addNews('Operación caída',d.outcome,'mercado');return
+    }
     if(!isWindowOpen(date)&&!deadlineDayV113(date)){
       d.status='failed';d.outcome='El mercado cerró antes de completar la operación.';
       addNews('Mercado cerrado',d.outcome+' ('+p.name+').','mercado');return
@@ -6187,6 +6191,8 @@ loadDB=async function(){
 
   const renderTransfersV113Base=renderTransfersV7;
   renderTransfersV7=function(){
+    ensureV7State();
+    if(deadlineDayV113())deadlineActivityV113(S.date);
     renderTransfersV113Base();
     ensureV7State();
 
