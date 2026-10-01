@@ -3406,6 +3406,356 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== FOOTBALL WORLD RELATIONSHIPS 10.6 =====
+// Agentes, periodistas y entrenadores rivales recuerdan al manager y afectan al mundo.
+(function(){
+  const AGENTS_V106=[
+    {id:'ag_santos',name:'Álex Santos',style:'Negociador',icon:'🤝'},
+    {id:'ag_moretti',name:'Luca Moretti',style:'Duro',icon:'💼'},
+    {id:'ag_mendes',name:'Tiago Mendes',style:'Ambicioso',icon:'📈'},
+    {id:'ag_keller',name:'Jonas Keller',style:'Profesional',icon:'📋'},
+    {id:'ag_dubois',name:'Hugo Dubois',style:'Protector',icon:'🛡️'},
+    {id:'ag_van',name:'Milan van Dijk',style:'Oportunista',icon:'🎯'},
+    {id:'ag_romero',name:'Nico Romero',style:'Cercano',icon:'🤝'},
+    {id:'ag_kovac',name:'Marko Kovač',style:'Exigente',icon:'⚖️'}
+  ];
+  const JOURNALISTS_V106=[
+    {id:'jr_medina',name:'Laura Medina',outlet:'Zona Mixta',style:'Cercana',pref:'protect'},
+    {id:'jr_vega',name:'Marcos Vega',outlet:'Diario 90',style:'Provocador',pref:'bold'},
+    {id:'jr_soler',name:'Irene Soler',outlet:'Fútbol Total',style:'Táctica',pref:'calm'},
+    {id:'jr_rivas',name:'Daniel Rivas',outlet:'El Área',style:'Exigente',pref:'bold'},
+    {id:'jr_saez',name:'Marta Sáez',outlet:'Radio Gol',style:'Equilibrada',pref:'calm'},
+    {id:'jr_ortiz',name:'Pablo Ortiz',outlet:'La Pizarra',style:'Analítico',pref:'calm'}
+  ];
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.world-rel-v106{padding:10px;border:1px solid var(--line);border-radius:12px;background:#0b1811;margin:9px 0}'+
+    '.world-rel-head-v106{display:flex;gap:9px;align-items:center}'+
+    '.world-rel-icon-v106{font-size:23px}'+
+    '.world-score-v106{font-weight:900;padding:3px 7px;border-radius:999px;border:1px solid var(--line);font-size:10px}'+
+    '.world-score-v106.good{color:#8ee8a8;border-color:#2f6541;background:#102319}'+
+    '.world-score-v106.bad{color:#ff9a9a;border-color:#743737;background:#251111}'+
+    '.world-score-v106.neutral{color:#d8dedb}'+
+    '.world-network-v106{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}'+
+    '.network-list-v106{max-height:330px;overflow:auto}'+
+    '.network-row-v106{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #1b2c23}'+
+    '.network-row-v106:last-child{border-bottom:0}'+
+    '.rival-meter-v106{height:7px;border-radius:999px;background:#17251e;overflow:hidden;margin-top:5px}'+
+    '.rival-meter-v106 i{display:block;height:100%;background:var(--accent);border-radius:999px}'+
+    '@media(max-width:760px){.world-network-v106{grid-template-columns:1fr}}';
+  document.head.appendChild(style);
+
+  const ensureV106Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV106Base();
+    if(!S)return;
+    S.externalRelations=S.externalRelations||{};
+    S.externalRelations.agents=S.externalRelations.agents||{};
+    S.externalRelations.journalists=S.externalRelations.journalists||{};
+    S.externalRelations.managers=S.externalRelations.managers||{};
+    S.externalMemory=S.externalMemory||[];
+    S.agentRecommendations=S.agentRecommendations||[];
+  };
+
+  function scoreClassV106(score){return score>=18?'good':score<=-18?'bad':'neutral'}
+  function relationWordV106(score){
+    if(score>=60)return'Excelente';
+    if(score>=30)return'Buena';
+    if(score>=10)return'Correcta';
+    if(score<=-60)return'Hostil';
+    if(score<=-30)return'Mala';
+    if(score<=-10)return'Tensa';
+    return'Neutral';
+  }
+  function externalRecordV106(kind,id,seed={}){
+    ensureV7State();
+    const map=S.externalRelations[kind];
+    return map[id]||(map[id]={score:0,memories:[],...seed});
+  }
+  function rememberExternalV106(kind,id,delta,text,seed={}){
+    const r=externalRecordV106(kind,id,seed);
+    r.score=clamp((r.score||0)+delta,-100,100);
+    r.memories=r.memories||[];
+    r.memories.unshift({date:S.date,text,delta});
+    r.memories=r.memories.slice(0,12);
+    S.externalMemory.unshift({date:S.date,kind,id,text,delta});
+    S.externalMemory=S.externalMemory.slice(0,100);
+    return r;
+  }
+
+  function agentForPlayerV106(p){
+    const a=AGENTS_V106[hashV7(String(p?.id||p?.name||''))%AGENTS_V106.length];
+    const r=externalRecordV106('agents',a.id,{name:a.name,style:a.style,deals:0,failed:0});
+    return{...a,record:r};
+  }
+  window.agentForPlayerV106=agentForPlayerV106;
+
+  function journalistForPressV106(ctx){
+    const key=(ctx?.key||S.date||'')+'|'+(ctx?.opp||S.club||'');
+    const j=JOURNALISTS_V106[hashV7(key)%JOURNALISTS_V106.length];
+    const r=externalRecordV106('journalists',j.id,{name:j.name,outlet:j.outlet,style:j.style,appearances:0});
+    return{...j,record:r};
+  }
+
+  function managerNameV106(club){
+    let n='';
+    try{if(typeof window.managerForClubV96==='function')n=window.managerForClubV96(club)||''}catch(e){}
+    if(!n||n==='Entrenador actual')n=managerProfileV7(club).name;
+    return n;
+  }
+  function managerRecordV106(club){
+    const name=managerNameV106(club);
+    const id='mgr_'+normName(name).replace(/\s+/g,'_');
+    const r=externalRecordV106('managers',id,{name,clubs:[],rivalry:0,meetings:0,myWins:0,theirWins:0,draws:0});
+    r.clubs=r.clubs||[];
+    if(club&&!r.clubs.includes(club))r.clubs.push(club);
+    return{id,name,record:r};
+  }
+  function rivalryLabelV106(r){
+    const rv=r?.rivalry||0;
+    if(rv>=35)return'Rivalidad fuerte';
+    if(rv>=20)return'Rivalidad personal';
+    if(rv>=9)return'Historia creciente';
+    return'Pocos antecedentes';
+  }
+
+  const renderPressV106Base=renderPress;
+  renderPress=function(){
+    ensureV7State();
+    const available=pressAvailable(),ctx=pressContext(),j=journalistForPressV106(ctx);
+    const rival=ctx?.opp?managerRecordV106(ctx.opp):null;
+    renderPressV106Base();
+    const main=els.view.querySelector('.card');
+    if(!main)return;
+    const box=document.createElement('div');
+    box.className='world-rel-v106';
+    box.innerHTML=
+      '<div class="world-rel-head-v106"><span class="world-rel-icon-v106">🎙️</span><div><strong>'+esc(j.name)+' · '+esc(j.outlet)+'</strong><div class="muted">Perfil: '+esc(j.style)+' · '+(available?'Te hace la pregunta de hoy':'Último periodista asignado')+'</div></div><span class="spacer"></span><span class="world-score-v106 '+scoreClassV106(j.record.score||0)+'">'+relationWordV106(j.record.score||0)+' '+((j.record.score||0)>0?'+':'')+(j.record.score||0)+'</span></div>'+
+      (rival?'<div class="muted" style="margin-top:7px">👔 Rival: <strong>'+esc(rival.name)+'</strong> · '+esc(rivalryLabelV106(rival.record))+' · '+(rival.record.meetings||0)+' enfrentamientos.</div>':'');
+    main.insertAdjacentElement('beforebegin',box);
+  };
+
+  const answerPressV106Base=answerPress;
+  answerPress=function(choice){
+    ensureV7State();
+    const ctx=pressContext();
+    const j=journalistForPressV106(ctx);
+    const jr=j.record;
+    jr.appearances=(jr.appearances||0)+1;
+    let delta=choice===j.pref?5:1;
+    if(j.style==='Provocador'&&choice==='protect')delta=-3;
+    if(j.style==='Cercana'&&choice==='bold')delta=-1;
+    if(j.style==='Exigente'&&choice==='protect')delta=-2;
+    rememberExternalV106('journalists',j.id,delta,
+      delta>=4?'Le gustó tu forma de responder en rueda de prensa':
+      delta<0?'No le convenció tu respuesta pública':'La rueda de prensa fue correcta',
+      {name:j.name,outlet:j.outlet,style:j.style});
+
+    if(ctx?.opp){
+      const mr=managerRecordV106(ctx.opp);
+      if(choice==='bold'){
+        mr.record.rivalry=(mr.record.rivalry||0)+2;
+        rememberExternalV106('managers',mr.id,-2,'Tus declaraciones elevaron la tensión antes del duelo',{name:mr.name,clubs:[ctx.opp],rivalry:mr.record.rivalry});
+      }else if(choice==='calm'){
+        rememberExternalV106('managers',mr.id,1,'Mantuviste un tono respetuoso antes del partido',{name:mr.name,clubs:[ctx.opp],rivalry:mr.record.rivalry||0});
+      }
+    }
+
+    if((j.record.score||0)>=30&&Math.random()<.28){
+      addNews(j.outlet,j.name+' destaca tu gestión y el tono mostrado ante los medios.','prensa');
+    }else if((j.record.score||0)<=-30&&Math.random()<.28){
+      addNews(j.outlet,j.name+' publica una pieza crítica sobre tus últimas declaraciones.','prensa');
+    }
+    answerPressV106Base(choice);
+    save();
+  };
+
+  const openMatchV106Base=openMatch;
+  openMatch=function(f){
+    ensureV7State();
+    const opp=f.home===S.club?f.away:f.home;
+    const mr=managerRecordV106(opp),r=mr.record;
+    if((r.rivalry||0)>=16&&r.lastBuildUp!==S.date){
+      r.lastBuildUp=S.date;
+      const hostile=(r.score||0)<=-12;
+      addNews('Duelo de entrenadores',
+        hostile?mr.name+' calienta la previa de un nuevo enfrentamiento contigo.':
+        'La prensa destaca el historial de enfrentamientos entre '+S.coach+' y '+mr.name+'.',
+        'rivalidad');
+    }
+    openMatchV106Base(f);
+    const panel=els.matchBox.querySelector('.match-shell')||els.matchBox.firstElementChild;
+    if(panel){
+      const note=document.createElement('div');
+      note.className='world-rel-v106';
+      note.innerHTML='<div class="world-rel-head-v106"><span class="world-rel-icon-v106">👔</span><div><strong>'+esc(mr.name)+'</strong><div class="muted">'+esc(opp)+' · '+esc(rivalryLabelV106(r))+' · balance: '+(r.myWins||0)+'G '+(r.draws||0)+'E '+(r.theirWins||0)+'P</div></div><span class="spacer"></span><span class="world-score-v106 '+scoreClassV106(r.score||0)+'">Respeto '+((r.score||0)>0?'+':'')+(r.score||0)+'</span></div><div class="rival-meter-v106"><i style="width:'+clamp((r.rivalry||0)*2,0,100)+'%"></i></div>';
+      panel.insertAdjacentElement('beforebegin',note);
+    }
+  };
+
+  const postMatchV106Base=postMatchV7;
+  postMatchV7=function(M,myGoals,oppGoals,f){
+    postMatchV106Base(M,myGoals,oppGoals,f);
+    if(f.comp==='Pretemporada')return;
+    const mr=managerRecordV106(M.opp),r=mr.record;
+    const before=r.meetings||0;
+    r.meetings=before+1;
+    const derby=rivalryLevelV7(S.club,M.opp);
+    r.rivalry=clamp((r.rivalry||0)+2+derby*3,0,50);
+    if(myGoals>oppGoals){
+      r.myWins=(r.myWins||0)+1;
+      rememberExternalV106('managers',mr.id,1,'Te impusiste en el último enfrentamiento',{name:mr.name,clubs:r.clubs,rivalry:r.rivalry});
+    }else if(myGoals<oppGoals){
+      r.theirWins=(r.theirWins||0)+1;
+      rememberExternalV106('managers',mr.id,1,'Aceptaste la derrota sin romper el respeto profesional',{name:mr.name,clubs:r.clubs,rivalry:r.rivalry});
+    }else{
+      r.draws=(r.draws||0)+1;
+      rememberExternalV106('managers',mr.id,1,'Un duelo igualado añadió otro capítulo a vuestra historia',{name:mr.name,clubs:r.clubs,rivalry:r.rivalry});
+    }
+    if(r.meetings===3){
+      addNews('Una rivalidad empieza a tomar forma','Ya te has enfrentado tres veces a '+mr.name+'. El historial entre ambos empieza a ser parte de la narrativa de tu carrera.','rivalidad');
+    }else if(r.rivalry>=20&&!r.personalRivalryNews){
+      r.personalRivalryNews=true;
+      addNews('Rivalidad de banquillos',S.coach+' y '+mr.name+' ya tienen una historia propia cada vez que se enfrentan.','rivalidad');
+    }
+    save();
+  };
+
+  const transferV106Base=openTransferNegotiation;
+  openTransferNegotiation=function(id){
+    ensureV7State();
+    const p=S.players.find(x=>String(x.id)===String(id));
+    transferV106Base(id);
+    if(!p||p.club===S.club)return;
+    const a=agentForPlayerV106(p),ar=a.record;
+    const send=els.matchBox.querySelector('#sendNeg');
+    if(!send)return;
+
+    const info=document.createElement('div');
+    info.className='world-rel-v106';
+    const commission=(ar.score||0)>=30?'Comisión reducida':(ar.score||0)<=-30?'Comisión elevada':'Condiciones estándar';
+    info.innerHTML='<div class="world-rel-head-v106"><span class="world-rel-icon-v106">'+a.icon+'</span><div><strong>Agente: '+esc(a.name)+'</strong><div class="muted">'+esc(a.style)+' · '+commission+'</div></div><span class="spacer"></span><span class="world-score-v106 '+scoreClassV106(ar.score||0)+'">'+relationWordV106(ar.score||0)+' '+((ar.score||0)>0?'+':'')+(ar.score||0)+'</span></div>';
+    send.insertAdjacentElement('beforebegin',info);
+
+    const oldClick=send.onclick;
+    send.onclick=function(e){
+      const beforeClub=p.club,beforeBudget=S.budget,trueWage=p.wage;
+      const score=ar.score||0;
+      p.wage=Math.max(100,Math.round((p.wage||1000)*(1-clamp(score,-60,60)/500)));
+      if(typeof oldClick==='function')oldClick.call(this,e);
+      const success=beforeClub!==S.club&&p.club===S.club;
+      if(!success)p.wage=trueWage;
+      if(success){
+        ar.deals=(ar.deals||0)+1;
+        rememberExternalV106('agents',a.id,6,'Cerraste una operación con uno de sus jugadores',{name:a.name,style:a.style,deals:ar.deals,failed:ar.failed||0});
+        const bonus=Math.max(0,+($('#negBonus')?.value||0));
+        if(score>=30&&bonus>0){
+          const saving=Math.round(bonus*.08);
+          S.budget+=saving;
+          addNews('Buena relación con el agente',a.name+' reduce costes de intermediación. Ahorras '+euro(saving)+'.','mercado');
+        }else if(score<=-30&&bonus>0){
+          const extra=Math.round(bonus*.12);
+          S.budget=Math.max(0,S.budget-extra);
+          addNews('Negociación complicada',LaStringV106(a.name)+' exige mayores costes de intermediación: '+euro(extra)+'.','mercado');
+        }
+      }else if(S.budget===beforeBudget){
+        ar.failed=(ar.failed||0)+1;
+        rememberExternalV106('agents',a.id,-1,'Una negociación no llegó a buen puerto',{name:a.name,style:a.style,deals:ar.deals||0,failed:ar.failed});
+      }
+      save();
+    };
+  };
+
+  function LaStringV106(s){return String(s||'El agente')}
+
+  const renewV106Base=openRenewContractV7;
+  openRenewContractV7=function(id){
+    ensureV7State();
+    const p=S.players.find(x=>String(x.id)===String(id));
+    renewV106Base(id);
+    if(!p)return;
+    const a=agentForPlayerV106(p),ar=a.record,send=els.matchBox.querySelector('#sendRenew');
+    if(!send)return;
+    const info=document.createElement('div');
+    info.className='world-rel-v106';
+    info.innerHTML='<div class="world-rel-head-v106"><span class="world-rel-icon-v106">'+a.icon+'</span><div><strong>Representante: '+esc(a.name)+'</strong><div class="muted">'+esc(a.style)+' · '+((ar.score||0)>=25?'Hay buena sintonía':(ar.score||0)<=-25?'La relación es complicada':'Relación profesional')+'</div></div><span class="spacer"></span><span class="world-score-v106 '+scoreClassV106(ar.score||0)+'">'+((ar.score||0)>0?'+':'')+(ar.score||0)+'</span></div>';
+    send.insertAdjacentElement('beforebegin',info);
+    const oldUntil=p.contractUntil,oldClick=send.onclick;
+    send.onclick=function(e){
+      if(typeof oldClick==='function')oldClick.call(this,e);
+      if(p.contractUntil&&p.contractUntil!==oldUntil){
+        ar.deals=(ar.deals||0)+1;
+        rememberExternalV106('agents',a.id,5,'Cerraste una renovación con uno de sus jugadores',{name:a.name,style:a.style,deals:ar.deals,failed:ar.failed||0});
+        save();
+      }
+    };
+  };
+
+  function maybeAgentRecommendationV106(date){
+    if(new Date(date+'T12:00:00Z').getUTCDay()!==1||!isWindowOpen(date)||Math.random()>.14)return;
+    const good=AGENTS_V106.map(a=>({a,r:externalRecordV106('agents',a.id,{name:a.name,style:a.style,deals:0,failed:0})})).filter(x=>(x.r.score||0)>=24).sort((x,y)=>(y.r.score||0)-(x.r.score||0));
+    if(!good.length)return;
+    const {a}=good[0];
+    const candidates=S.players.filter(p=>p.club!==S.club&&p.club!=='Retirado'&&p.club!=='Agente libre'&&p.age<=27&&agentForPlayerV106(p).id===a.id&&!S.agentRecommendations.includes(p.id));
+    const p=pick(candidates);
+    if(!p)return;
+    S.agentRecommendations.push(p.id);
+    S.shortlist=S.shortlist||[];
+    if(!S.shortlist.includes(p.id))S.shortlist.push(p.id);
+    addNews('Contacto de mercado',a.name+' te recomienda personalmente a '+p.name+' ('+p.club+'). Lo añades a seguimiento.','mercado');
+    pushDayEventV7(date,{type:'market',text:'🤝 '+a.name+' te recomienda a '+p.name+'.'});
+  }
+
+  function maybeMediaStoryV106(date){
+    if(new Date(date+'T12:00:00Z').getUTCDay()!==1||Math.random()>.10)return;
+    const rows=JOURNALISTS_V106.map(j=>({j,r:externalRecordV106('journalists',j.id,{name:j.name,outlet:j.outlet,style:j.style,appearances:0})})).filter(x=>Math.abs(x.r.score||0)>=28).sort((a,b)=>Math.abs(b.r.score||0)-Math.abs(a.r.score||0));
+    if(!rows.length)return;
+    const {j,r}=rows[0];
+    if((r.score||0)>0){
+      S.reputation=clamp(S.reputation+.25,1,100);
+      addNews(j.outlet,j.name+' publica un perfil favorable sobre tu evolución como entrenador.','prensa');
+    }else{
+      S.board=clamp(S.board-.25,0,100);
+      addNews(j.outlet,j.name+' cuestiona algunas de tus últimas decisiones en una columna de opinión.','prensa');
+    }
+  }
+
+  const worldDayV106Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV106Base(date);
+    ensureV7State();
+    maybeAgentRecommendationV106(date);
+    maybeMediaStoryV106(date);
+  };
+
+  const renderCareerV106Base=renderCareerV7;
+  renderCareerV7=function(){
+    ensureV7State();
+    renderCareerV106Base();
+
+    const agents=AGENTS_V106.map(a=>({a,r:externalRecordV106('agents',a.id,{name:a.name,style:a.style,deals:0,failed:0})}))
+      .filter(x=>(x.r.deals||0)||(x.r.failed||0)||(x.r.score||0)).sort((x,y)=>Math.abs(y.r.score||0)-Math.abs(x.r.score||0)).slice(0,6);
+    const journalists=JOURNALISTS_V106.map(j=>({j,r:externalRecordV106('journalists',j.id,{name:j.name,outlet:j.outlet,style:j.style,appearances:0})}))
+      .filter(x=>(x.r.appearances||0)||(x.r.score||0)).sort((x,y)=>Math.abs(y.r.score||0)-Math.abs(x.r.score||0)).slice(0,6);
+    const managers=Object.values(S.externalRelations.managers||{}).filter(r=>(r.meetings||0)>0)
+      .sort((a,b)=>(b.rivalry||0)-(a.rivalry||0)).slice(0,6);
+
+    const card=document.createElement('div');
+    card.className='card';
+    card.style.marginTop='14px';
+    card.innerHTML=
+      '<div class="row"><h3 style="margin:0">🌍 Tu red en el mundo del fútbol</h3><span class="spacer"></span><span class="badge">Las relaciones tienen memoria</span></div>'+
+      '<div class="world-network-v106" style="margin-top:10px">'+
+        '<div><h3>🤝 Agentes</h3><div class="network-list-v106">'+(agents.length?agents.map(x=>'<div class="network-row-v106"><div><strong>'+esc(x.a.name)+'</strong><div class="muted">'+esc(x.a.style)+' · '+(x.r.deals||0)+' acuerdos</div></div><span class="world-score-v106 '+scoreClassV106(x.r.score||0)+'">'+((x.r.score||0)>0?'+':'')+(x.r.score||0)+'</span></div>').join(''):'<div class="empty">Aún no tienes una relación destacada con agentes.</div>')+'</div></div>'+
+        '<div><h3>🎙️ Periodistas</h3><div class="network-list-v106">'+(journalists.length?journalists.map(x=>'<div class="network-row-v106"><div><strong>'+esc(x.j.name)+'</strong><div class="muted">'+esc(x.j.outlet)+' · '+esc(x.j.style)+'</div></div><span class="world-score-v106 '+scoreClassV106(x.r.score||0)+'">'+((x.r.score||0)>0?'+':'')+(x.r.score||0)+'</span></div>').join(''):'<div class="empty">Tus ruedas de prensa construirán estas relaciones.</div>')+'</div></div>'+
+        '<div><h3>👔 Entrenadores rivales</h3><div class="network-list-v106">'+(managers.length?managers.map(r=>'<div class="network-row-v106"><div><strong>'+esc(r.name||'Entrenador')+'</strong><div class="muted">'+(r.meetings||0)+' duelos · '+esc(rivalryLabelV106(r))+'</div><div class="rival-meter-v106"><i style="width:'+clamp((r.rivalry||0)*2,0,100)+'%"></i></div></div><span class="world-score-v106 '+scoreClassV106(r.score||0)+'">'+((r.score||0)>0?'+':'')+(r.score||0)+'</span></div>').join(''):'<div class="empty">Las rivalidades aparecerán al repetir enfrentamientos.</div>')+'</div></div>'+
+      '</div>';
+    els.view.appendChild(card);
+  };
+})();
+
 loadDB();
 })();
 </script>
