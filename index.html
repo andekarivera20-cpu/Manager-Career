@@ -3263,11 +3263,12 @@ loadDB=async function(){
         return;
       }
       const originalWage=p.wage;
+      const dealType=els.matchBox.querySelector('input[name="dealType"]:checked')?.value||'buy';
       if(score!==0)p.wage=Math.max(100,Math.round((p.wage||1000)*(1-clamp(score,-70,70)/260)));
       const beforeClub=p.club;
       if(typeof oldClick==='function')oldClick.call(this,e);
       const success=beforeClub!==S.club&&p.club===S.club;
-      if(!success)p.wage=originalWage;
+      if(!success||dealType==='loan'||dealType==='loanbuy')p.wage=originalWage;
       if(success){
         S.managerLegacy.reunions=(S.managerLegacy.reunions||0)+1;
         recordRelationV105(p,score>=0?10:5,'reunion','Volvisteis a trabajar juntos en '+S.club);
