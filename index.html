@@ -4713,6 +4713,9 @@ loadDB=async function(){
     if(!S.offers.some(x=>x.club===club))S.offers.push({club,leagueId:lid,budget:budgetFor(club),story:true});
     return true;
   }
+  const AGENT_IDS_V110=['ag_santos','ag_moretti','ag_mendes','ag_keller','ag_dubois','ag_van','ag_romero','ag_kovac'];
+  function agentIdForV110(p){return AGENT_IDS_V110[hashV7(String(p?.id||p?.name||''))%AGENT_IDS_V110.length]}
+
   function weightedStoryV110(rows){
     if(!rows.length)return null;
     const total=rows.reduce((a,x)=>a+(x.weight||1),0);
@@ -4771,7 +4774,7 @@ loadDB=async function(){
     for(const [agentId,r] of Object.entries(S.externalRelations?.agents||{})){
       if((r.score||0)<24)continue;
       const ps=S.players.filter(p=>p.club!==S.club&&p.club!=='Retirado'&&p.age<=27&&p.potential>=76)
-        .filter(p=>{try{return window.agentForPlayerV106?.(p)?.id===agentId}catch(e){return false}})
+        .filter(p=>agentIdForV110(p)===agentId)
         .sort((a,b)=>(b.potential||0)-(a.potential||0)).slice(0,12);
       const p=pick(ps);if(!p)continue;
       addCandidateV110(rows,{key:'agenttip:'+agentId+':'+p.id,type:'agent_tip',weight:7,payload:{agentId,playerId:p.id}});
@@ -4780,9 +4783,7 @@ loadDB=async function(){
     // Agentes tensos pueden abrir un frente con uno de tus futbolistas.
     for(const [agentId,r] of Object.entries(S.externalRelations?.agents||{})){
       if((r.score||0)>-24)continue;
-      const ps=getClubPlayers(S.club).filter(p=>{
-        try{return window.agentForPlayerV106?.(p)?.id===agentId}catch(e){return false}
-      }).filter(p=>(p.morale||70)<72||daysToContractSafeV110(p)<540);
+      const ps=getClubPlayers(S.club).filter(p=>agentIdForV110(p)===agentId).filter(p=>(p.morale||70)<72||daysToContractSafeV110(p)<540);
       const p=pick(ps);if(!p)continue;
       addCandidateV110(rows,{key:'agentpressure:'+agentId+':'+p.id+':'+S.season,type:'agent_pressure',weight:8,payload:{agentId,playerId:p.id}});
     }
@@ -5033,6 +5034,7 @@ loadDB=async function(){
   }
 
   function applyStoryChoiceV110(story,action,label){
+    const currentTitle=(storyViewV110(story)?.title||'Historia de carrera');
     const p=playerV110(story.payload?.playerId);
     const aId=story.payload?.agentId,jId=story.payload?.journalistId,mId=story.payload?.managerId;
 
@@ -5102,7 +5104,7 @@ loadDB=async function(){
     else if(action==='club_future'){resolveStoryV110(story,label,'La puerta queda abierta para otra temporada.')}
     else resolveStoryV110(story,label,'La historia siguió su curso.');
 
-    addNews('Historia de carrera',storyViewHeadlineV110(story)+' · '+story.outcome,'historia');
+    addNews('Historia de carrera',currentTitle+' · '+story.outcome,'historia');
     save();
   }
 
