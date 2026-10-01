@@ -6233,6 +6233,268 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== MATCH PERFORMANCE 2.0 10.14 =====
+// Estadísticas individuales por posición, notas 1-10 y resumen visual postpartido.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.postmatch-v114{margin:9px 0;padding:11px;border:1px solid #355842;border-radius:14px;background:linear-gradient(135deg,#0c1d14,#08120d)}'+
+    '.postmatch-hero-v114{display:grid;grid-template-columns:minmax(0,1.2fr) repeat(3,minmax(0,1fr));gap:7px;margin-top:9px}'+
+    '.postmatch-kpi-v114{padding:9px;border:1px solid var(--line);border-radius:11px;background:#08130e;min-width:0}'+
+    '.postmatch-kpi-v114.mvp{border-color:#80662d;background:#211b0d}'+
+    '.postmatch-kpi-v114 small{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;font-weight:900}'+
+    '.postmatch-kpi-v114 strong{display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+    '.postmatch-rating-v114{font-size:20px;font-weight:950;margin-top:3px}'+
+    '.player-ratings-v114{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:8px}'+
+    '.player-rating-v114{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center;padding:6px 8px;border:1px solid #1c3025;border-radius:9px;background:#09150f}'+
+    '.rating-num-v114{font-size:12px;font-weight:950;padding:3px 6px;border-radius:7px;background:#12251a}'+
+    '.rating-num-v114.great{color:#ffd776;background:#2a210b}.rating-num-v114.good{color:#8ce7a7}.rating-num-v114.bad{color:#ff9d9d;background:#281212}'+
+    '.match-tag-v114{font-size:9px;font-weight:900;margin-left:4px}'+
+    '.match-tag-v114.hot{color:#ffd776}.match-tag-v114.bad{color:#ff9d9d}'+
+    '@media(max-width:700px){.postmatch-hero-v114{grid-template-columns:1fr 1fr}.postmatch-kpi-v114.mvp{grid-column:1/-1}.player-ratings-v114{grid-template-columns:1fr}.postmatch-v114{padding:9px}}';
+  document.head.appendChild(style);
+
+  function statsForV114(M,id){
+    M.playerStatsV114=M.playerStatsV114||{};
+    return M.playerStatsV114[String(id)]||(M.playerStatsV114[String(id)]={
+      shots:0,onTarget:0,goals:0,assists:0,keyPasses:0,passes:0,completed:0,
+      dribbles:0,dribblesWon:0,recoveries:0,tackles:0,tacklesWon:0,
+      duels:0,duelsWon:0,clearances:0,saves:0,goalsConceded:0,cards:0,
+      minutes:0,rating:6.0
+    });
+  }
+  function posTypeV114(p){
+    const s=String(p?.positions||'');
+    if(s.includes('GK'))return'gk';
+    if(/CB|LB|RB|LWB|RWB/.test(s))return'def';
+    if(/CDM|CM/.test(s))return'mid';
+    if(/CAM|LW|RW/.test(s))return'creator';
+    return'att';
+  }
+  function activePlayersV114(M){
+    return (S.lineup||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+  }
+  function ensureStatsV114(M){
+    M.playerStatsV114=M.playerStatsV114||{};
+    for(const p of activePlayersV114(M))statsForV114(M,p.id);
+    for(const s of M.subLog||[]){
+      statsForV114(M,s.outId);statsForV114(M,s.inId);
+    }
+  }
+  function addPassiveV114(M){
+    ensureStatsV114(M);
+    for(const p of activePlayersV114(M)){
+      const st=statsForV114(M,p.id),type=posTypeV114(p),quality=clamp((p.overall||70)/82,.72,1.2);
+      st.minutes=Math.max(st.minutes,M.minute);
+
+      if(type==='gk'){
+        st.passes+=rnd(1,3);st.completed+=Math.min(st.passes,rnd(1,3));
+        if(Math.random()<.22){st.recoveries++;st.duels++;if(Math.random()<.72*quality)st.duelsWon++}
+      }else if(type==='def'){
+        st.passes+=rnd(2,5);st.completed+=rnd(2,Math.max(2,st.passes));
+        if(Math.random()<.58){st.duels++;if(Math.random()<.62*quality)st.duelsWon++}
+        if(Math.random()<.44){st.tackles++;if(Math.random()<.66*quality)st.tacklesWon++}
+        if(Math.random()<.48)st.recoveries++;
+        if(Math.random()<.33)st.clearances++;
+      }else if(type==='mid'){
+        st.passes+=rnd(4,8);st.completed+=rnd(Math.max(2,st.passes-3),st.passes);
+        if(Math.random()<.48)st.recoveries++;
+        if(Math.random()<.30){st.tackles++;if(Math.random()<.62*quality)st.tacklesWon++}
+        if(Math.random()<.22)st.keyPasses++;
+        if(Math.random()<.18){st.duels++;if(Math.random()<.58*quality)st.duelsWon++}
+      }else if(type==='creator'){
+        st.passes+=rnd(3,6);st.completed+=rnd(Math.max(1,st.passes-3),st.passes);
+        if(Math.random()<.34)st.keyPasses++;
+        if(Math.random()<.35){st.dribbles++;if(Math.random()<.60*quality)st.dribblesWon++}
+        if(Math.random()<.25){st.duels++;if(Math.random()<.50*quality)st.duelsWon++}
+      }else{
+        st.passes+=rnd(1,4);st.completed+=rnd(1,Math.max(1,st.passes));
+        if(Math.random()<.28){st.duels++;if(Math.random()<.52*quality)st.duelsWon++}
+        if(Math.random()<.22){st.dribbles++;if(Math.random()<.55*quality)st.dribblesWon++}
+        if(Math.random()<.16)st.keyPasses++;
+      }
+    }
+  }
+  function parseEventsV114(M,events){
+    for(const e of events){
+      const txt=String(e.text||'');
+      let m=txt.match(/¡GOL! (.*?)(?:, asistencia de (.*?))?\./);
+      if(m){
+        const scorer=S.players.find(p=>p.name===m[1]);
+        if(scorer){
+          const st=statsForV114(M,scorer.id);st.goals++;st.shots++;st.onTarget++;
+        }
+        if(m[2]){
+          const assist=S.players.find(p=>p.name===m[2]);
+          if(assist){const st=statsForV114(M,assist.id);st.assists++;st.keyPasses++}
+        }
+        continue;
+      }
+      m=txt.match(/Amarilla para (.*?)\./)||txt.match(/Amarilla para (.*?) y/);
+      if(m){
+        const p=S.players.find(x=>x.name===m[1]);
+        if(p)statsForV114(M,p.id).cards++;
+      }
+    }
+  }
+  function simulateOurShotDetailV114(M,beforeShots,beforeGoals){
+    const shotsDelta=(M.myShots||0)-beforeShots;
+    if(shotsDelta<=0)return;
+    const field=activePlayersV114(M).filter(p=>posTypeV114(p)!=='gk');
+    for(let i=0;i<shotsDelta;i++){
+      const weights=field.map(p=>({p,w:posTypeV114(p)==='att'?5:posTypeV114(p)==='creator'?3:posTypeV114(p)==='mid'?1.5:1}));
+      let total=weights.reduce((a,x)=>a+x.w,0),r=Math.random()*total,shooter=weights[0]?.p;
+      for(const x of weights){r-=x.w;if(r<=0){shooter=x.p;break}}
+      if(!shooter)continue;
+      const st=statsForV114(M,shooter.id);
+      if((M.home?M.hg:M.ag)>beforeGoals && st.goals>0)continue;
+      st.shots++;
+      if(Math.random()<.43)st.onTarget++;
+    }
+  }
+  function simulateOppShotDetailV114(M,beforeOppShots,beforeOppGoals){
+    const shotsDelta=(M.oppShots||0)-beforeOppShots;
+    if(shotsDelta<=0)return;
+    const gk=activePlayersV114(M).find(p=>posTypeV114(p)==='gk');
+    if(!gk)return;
+    const st=statsForV114(M,gk.id);
+    const goalsNow=M.home?M.ag:M.hg;
+    const conceded=Math.max(0,goalsNow-beforeOppGoals);
+    st.goalsConceded+=conceded;
+    st.saves+=Math.max(0,shotsDelta-conceded-(Math.random()<.35?1:0));
+  }
+
+  const openMatchV114Base=openMatch;
+  openMatch=function(f){
+    openMatchV114Base(f);
+    // La partida recién abierta es la que está pintada; la capa base no expone M.
+    // Se inicializa al primer ciclo de simulación.
+  };
+
+  const simulateChanceV114Base=simulateChance;
+  simulateChance=function(M){
+    ensureStatsV114(M);
+    const beforeLen=(M.events||[]).length,beforeShots=M.myShots||0,beforeOpp=M.oppShots||0;
+    const beforeGoals=M.home?M.hg:M.ag,beforeOppGoals=M.home?M.ag:M.hg;
+    addPassiveV114(M);
+    simulateChanceV114Base(M);
+    parseEventsV114(M,(M.events||[]).slice(beforeLen));
+    simulateOurShotDetailV114(M,beforeShots,beforeGoals);
+    simulateOppShotDetailV114(M,beforeOpp,beforeOppGoals);
+  };
+
+  function minutesPlayedV114(M,id){
+    const starters=M.startingXI||[],subs=M.subLog||[];
+    const starter=starters.some(x=>String(x)===String(id));
+    const out=subs.find(s=>String(s.outId)===String(id));
+    const inn=subs.find(s=>String(s.inId)===String(id));
+    return starter?(out?out.minute:90):(inn?Math.max(0,90-inn.minute):0);
+  }
+  function ratingV114(p,st,result,clean){
+    const type=posTypeV114(p);
+    let r=6.0+(result>0?.22:result===0?.03:-.18);
+    r+=st.goals*.85+st.assists*.5+st.keyPasses*.07;
+    if(type==='gk'){
+      r+=st.saves*.14-st.goalsConceded*.22+(clean?.35:0);
+    }else if(type==='def'){
+      r+=st.tacklesWon*.07+st.duelsWon*.055+st.recoveries*.035+st.clearances*.035+(clean?.18:0);
+    }else if(type==='mid'){
+      r+=st.recoveries*.035+st.tacklesWon*.05+st.keyPasses*.055;
+      if(st.passes)r+=clamp((st.completed/st.passes-.75)*.9,-.15,.18);
+    }else if(type==='creator'){
+      r+=st.dribblesWon*.07+st.keyPasses*.075+st.onTarget*.06;
+    }else{
+      r+=st.onTarget*.09+st.dribblesWon*.045+st.duelsWon*.025;
+    }
+    if(st.cards)r-=st.cards*.12;
+    if(p.matchInjured)r-=.35;
+    r+=Math.random()*.28-.12;
+    return clamp(Number(r.toFixed(1)),4.2,9.8);
+  }
+
+  // Reemplaza el cálculo antiguo de notas para que todo el resto del juego
+  // (forma, peticiones, premios...) use estas notas nuevas.
+  recordMatchStatsV7=function(M,myGoals,oppGoals){
+    ensureStatsV114(M);
+    const used=new Set(M.startingXI||[]);
+    for(const s of M.subLog||[])used.add(s.inId);
+    const result=myGoals>oppGoals?1:myGoals===oppGoals?0:-1;
+    const clean=oppGoals===0;
+    const matchRows=[];
+
+    for(const id of used){
+      const p=S.players.find(x=>String(x.id)===String(id));if(!p)continue;
+      const st=statsForV114(M,id),mins=minutesPlayedV114(M,id);
+      st.minutes=mins;
+      p.appearances=(p.appearances||0)+1;
+      if((M.startingXI||[]).some(x=>String(x)===String(id)))p.starts=(p.starts||0)+1;
+      p.minutes=(p.minutes||0)+mins;
+      st.rating=ratingV114(p,st,result,clean);
+      p.ratingSum=(p.ratingSum||0)+st.rating;
+      p.avgRating=p.ratingSum/Math.max(1,p.appearances);
+      if(clean&&['gk','def'].includes(posTypeV114(p)))p.cleanSheets=(p.cleanSheets||0)+1;
+
+      p.totalShotsV114=(p.totalShotsV114||0)+st.shots;
+      p.totalKeyPassesV114=(p.totalKeyPassesV114||0)+st.keyPasses;
+      p.totalRecoveriesV114=(p.totalRecoveriesV114||0)+st.recoveries;
+      p.totalTacklesWonV114=(p.totalTacklesWonV114||0)+st.tacklesWon;
+      p.totalSavesV114=(p.totalSavesV114||0)+st.saves;
+
+      matchRows.push({id:p.id,name:p.name,pos:p.positions,rating:st.rating,...st});
+    }
+
+    matchRows.sort((a,b)=>b.rating-a.rating);
+    const mvp=matchRows[0]||null;
+    const threat=matchRows.slice().sort((a,b)=>(b.shots+b.onTarget*.7+b.goals*3)-(a.shots+a.onTarget*.7+a.goals*3))[0]||mvp;
+    const creative=matchRows.slice().sort((a,b)=>(b.keyPasses+b.assists*4)-(a.keyPasses+a.assists*4))[0]||mvp;
+    const defensive=matchRows.slice().filter(x=>/GK|CB|LB|RB|CDM|LWB|RWB/.test(x.pos||''))
+      .sort((a,b)=>(b.saves*1.5+b.tacklesWon+b.recoveries*.5+b.clearances*.4)-(a.saves*1.5+a.tacklesWon+a.recoveries*.5+a.clearances*.4))[0]||mvp;
+
+    M.postSummaryV114={rows:matchRows,mvp,threat,creative,defensive};
+    if(mvp&&mvp.rating>=8.5)addNews('MVP del partido',mvp.name+' firma un partidazo con una nota de '+mvp.rating.toFixed(1)+'.','partido');
+  };
+
+  function tagV114(r){
+    if(r>=8.5)return'<span class="match-tag-v114 hot">🔥 Partidazo</span>';
+    if(r<=5.5)return'<span class="match-tag-v114 bad">😕 Mal partido</span>';
+    return'';
+  }
+  function ratingClassV114(r){return r>=8.5?'great':r>=7?'good':r<=5.7?'bad':''}
+  function summaryStatV114(row,type){
+    if(!row)return'—';
+    if(type==='threat')return row.goals?row.goals+' gol'+(row.goals===1?'':'es')+' · '+row.shots+' tiros':row.shots+' tiros';
+    if(type==='creative')return row.assists?row.assists+' asist. · '+row.keyPasses+' pases clave':row.keyPasses+' pases clave';
+    if(type==='def'){
+      if(/GK/.test(row.pos||''))return row.saves+' paradas';
+      return row.tacklesWon+' entradas · '+row.recoveries+' recup.';
+    }
+    return row.rating.toFixed(1);
+  }
+
+  const renderMatchV114Base=renderMatch;
+  renderMatch=function(M){
+    renderMatchV114Base(M);
+    if(!M?.done||!M.postSummaryV114||els.matchBox.querySelector('.postmatch-v114'))return;
+    const s=M.postSummaryV114;
+    const box=document.createElement('div');
+    box.className='postmatch-v114';
+    box.innerHTML=
+      '<div class="row"><strong>📊 Rendimiento individual</strong><span class="spacer"></span><span class="badge">'+s.rows.length+' jugadores</span></div>'+
+      '<div class="postmatch-hero-v114">'+
+        '<div class="postmatch-kpi-v114 mvp"><small>⭐ MVP</small><strong>'+esc(s.mvp?.name||'—')+'</strong><div class="postmatch-rating-v114">'+(s.mvp?.rating?.toFixed(1)||'—')+'</div></div>'+
+        '<div class="postmatch-kpi-v114"><small>🎯 Más peligroso</small><strong>'+esc(s.threat?.name||'—')+'</strong><div class="muted">'+esc(summaryStatV114(s.threat,'threat'))+'</div></div>'+
+        '<div class="postmatch-kpi-v114"><small>🪄 Más creativo</small><strong>'+esc(s.creative?.name||'—')+'</strong><div class="muted">'+esc(summaryStatV114(s.creative,'creative'))+'</div></div>'+
+        '<div class="postmatch-kpi-v114"><small>🧱 Muro defensivo</small><strong>'+esc(s.defensive?.name||'—')+'</strong><div class="muted">'+esc(summaryStatV114(s.defensive,'def'))+'</div></div>'+
+      '</div>'+
+      '<div class="player-ratings-v114">'+s.rows.slice().sort((a,b)=>b.rating-a.rating).map(r=>
+        '<div class="player-rating-v114"><div><strong>'+esc(r.name)+'</strong>'+tagV114(r.rating)+'<div class="muted">'+r.minutes+"' · "+(r.goals?r.goals+'G ':'')+(r.assists?r.assists+'A ':'')+r.keyPasses+' PC · '+r.recoveries+' REC</div></div><span class="rating-num-v114 '+ratingClassV114(r.rating)+'">'+r.rating.toFixed(1)+'</span></div>'
+      ).join('')+'</div>';
+    const cont=[...els.matchBox.querySelectorAll('button')].find(b=>b.textContent==='Continuar');
+    if(cont)cont.insertAdjacentElement('beforebegin',box);else els.matchBox.appendChild(box);
+  };
+})();
+
 loadDB();
 })();
 </script>
