@@ -2987,7 +2987,7 @@ loadDB=async function(){
     return '<div class="board-challenge-v104">'+
       '<div class="row"><div><strong>🎯 '+esc(ch.title)+'</strong><div class="muted">'+esc(ch.desc)+'</div></div><span class="board-tag-v104">'+esc(remaining)+'</span></div>'+
       '<div class="board-progress-v104"><i style="width:'+pct+'%"></i></div>'+
-      '<div class="row"><small>'+esc(challengeLabelV104(ch))+'</small><span class="spacer"></span><small>'+pct+'%</small></div>'+
+      '<div class="row"><small>'+esc(challengeLabelV109(ch))+'</small><span class="spacer"></span><small>'+pct+'%</small></div>'+
       '<div class="board-meta-v104"><span class="board-tag-v104 board-reward-v104">+ '+(ch.rewardBoard||5)+' confianza</span><span class="board-tag-v104 board-reward-v104">+'+euro(ch.rewardBudget||0)+'</span><span class="board-tag-v104 board-penalty-v104">Fallo: -'+(ch.penaltyBoard||5)+' confianza</span></div>'+
     '</div>';
   }
@@ -4476,6 +4476,7 @@ loadDB=async function(){
     '.home-alerts-v109::-webkit-scrollbar{display:none}'+
     '.home-alert-v109{border:1px solid #5f4930;background:#20180d;color:#f3dfb5;border-radius:999px;padding:7px 10px;font-size:11px;font-weight:850;white-space:nowrap;cursor:pointer}'+
     '.home-settings-v109{min-width:42px;padding-left:10px!important;padding-right:10px!important}'+
+    '.home-club-v109 .manager-chip{width:auto!important}'+
     '.home-stop-grid-v109{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}'+
     '.home-stop-v109{display:flex;align-items:center;gap:8px;padding:9px;border:1px solid var(--line);border-radius:10px;background:#09150f;font-size:12px}'+
     '.home-stop-v109 input{min-height:0;width:18px;height:18px}'+
@@ -4592,6 +4593,17 @@ loadDB=async function(){
     card.querySelectorAll('.bidAcceptV109').forEach(b=>b.onclick=()=>acceptIncomingBid(b.dataset.id));
     card.querySelectorAll('.bidRejectV109').forEach(b=>b.onclick=()=>rejectIncomingBid(b.dataset.id));
   };
+
+  function challengeLabelV109(ch){
+    if(!ch)return'';
+    if(ch.type==='points')return (ch.progress||0)+' / '+ch.target+' puntos';
+    if(ch.type==='wins')return (ch.progress||0)+' / '+ch.target+' victorias';
+    if(ch.type==='goals')return (ch.progress||0)+' / '+ch.target+' goles';
+    if(ch.type==='clean')return (ch.progress||0)+' / '+ch.target+' porterías a cero';
+    if(ch.type==='youthStarts')return (ch.progress||0)+' / '+ch.target+' partidos con joven titular';
+    if(ch.type==='academy')return (ch.progress||0)+' / '+ch.target+' canterano ascendido';
+    return (ch.progress||0)+' / '+(ch.target||1);
+  }
 
   // El reto activo de la directiva vive ahora en Carrera.
   const renderCareerV109Base=renderCareerV7;
