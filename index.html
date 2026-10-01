@@ -6601,6 +6601,335 @@ loadDB=async function(){
   setTimeout(refreshManagerStartV115,0);
 })();
 
+
+// ===== LIVING MANAGER WORLD 10.16 =====
+// Los entrenadores son personas persistentes: despidos, fichajes, paro, historial y cambios de club.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.manager-world-v116{margin-top:10px}.manager-market-v116{display:grid;grid-template-columns:1.15fr .85fr;gap:9px;margin-top:8px}'+
+    '.manager-move-v116{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #1b2d23}.manager-move-v116:last-child{border-bottom:0}'+
+    '.manager-free-v116{padding:8px;border:1px solid var(--line);border-radius:10px;background:#09150f;margin-bottom:6px}'+
+    '.manager-prestige-v116{font-size:10px;font-weight:900;padding:3px 6px;border-radius:999px;border:1px solid #395643;white-space:nowrap}'+
+    '.manager-career-v116{font-size:10px;color:var(--muted);margin-top:3px}'+
+    '.manager-status-v116{font-size:9px;font-weight:900;color:#ffd47a}'+
+    '@media(max-width:760px){.manager-market-v116{grid-template-columns:1fr}}';
+  document.head.appendChild(style);
+
+  const ELITE_V116=new Set([
+    'Pep Guardiola','José Mourinho','Carlo Ancelotti','Jürgen Klopp','Diego Simeone',
+    'Luis Enrique','Mikel Arteta','Xabi Alonso','Antonio Conte','Zinedine Zidane',
+    'Julian Nagelsmann','Thomas Tuchel','Simone Inzaghi','Hansi Flick'
+  ]);
+
+  function managerIdV116(name){return'm116_'+hashV7(String(name||'').toLowerCase().trim())}
+  function clubPrestigeV116(club){
+    const lid=DB.clubs.get(club)?.leagueId;
+    const tier=EURO_LEAGUES[lid]?.tier||1;
+    return clamp(Math.round(clubRatingDB(club)+(tier===1?4:-5)),45,96);
+  }
+  function managerPrestigeV116(name,club){
+    let p=Math.round(clubPrestigeV116(club)+(hashV7(name)%9)-4);
+    if(ELITE_V116.has(name))p=Math.max(p,90+(hashV7(name)%6));
+    return clamp(p,45,97);
+  }
+  function managerStyleV116(name){
+    return V7_STYLES[hashV7(name)%V7_STYLES.length];
+  }
+  function fallbackManagerNameV116(club){
+    const mapped=window.managerForClubV96?.(club);
+    if(mapped&&mapped!=='Entrenador actual')return mapped;
+    return 'Técnico de '+club;
+  }
+  function worldV116(){
+    S.managerWorldV116=S.managerWorldV116||{initialized:false,assignments:{},managers:{},vacancies:[],moves:[],lastWeekly:null};
+    S.managerWorldV116.assignments=S.managerWorldV116.assignments||{};
+    S.managerWorldV116.managers=S.managerWorldV116.managers||{};
+    S.managerWorldV116.vacancies=S.managerWorldV116.vacancies||[];
+    S.managerWorldV116.moves=S.managerWorldV116.moves||[];
+    return S.managerWorldV116;
+  }
+  function ensureManagerRecordV116(name,club,status='employed'){
+    const w=worldV116(),id=managerIdV116(name);
+    if(!w.managers[id]){
+      w.managers[id]={
+        id,name,prestige:managerPrestigeV116(name,club),style:managerStyleV116(name),
+        status,club:status==='employed'?club:null,appointed:status==='employed'?S.date:null,
+        freeSince:status==='free'?S.date:null,pressure:0,form:0,
+        history:club?[{club,from:'2026-07-01',to:null,note:'Etapa inicial'}]:[]
+      };
+    }
+    return w.managers[id];
+  }
+  function closeManagerSpellV116(m,date,note){
+    const h=(m.history||[]).slice().reverse().find(x=>!x.to);
+    if(h){h.to=date;if(note)h.note=note}
+  }
+  function addManagerMoveV116(type,m,from,to,text){
+    const w=worldV116();
+    w.moves.unshift({date:S.date,type,managerId:m.id,manager:m.name,from:from||'',to:to||'',text});
+    w.moves=w.moves.slice(0,80);
+  }
+  function makeFreeV116(m,from,note='Despedido'){
+    const w=worldV116();
+    if(from&&w.assignments[from]===m.id)delete w.assignments[from];
+    closeManagerSpellV116(m,S.date,note);
+    m.status='free';m.club=null;m.freeSince=S.date;m.appointed=null;m.pressure=0;m.form=0;
+    addManagerMoveV116('free',m,from,null,note+' en '+from);
+  }
+  function appointV116(m,club,note='Nuevo entrenador'){
+    const w=worldV116(),old=m.club;
+    if(old&&old!==club&&w.assignments[old]===m.id){
+      delete w.assignments[old];
+      closeManagerSpellV116(m,S.date,'Deja el club');
+      createVacancyV116(old,'Entrenador fichado por otro club');
+    }else if(m.status==='free'){
+      closeManagerSpellV116(m,S.date);
+    }
+    const displacedId=w.assignments[club];
+    if(displacedId&&displacedId!=='__USER__'&&displacedId!==m.id){
+      const displaced=w.managers[displacedId];
+      if(displaced)makeFreeV116(displaced,club,'Relevado del cargo');
+    }
+    w.assignments[club]=m.id;
+    m.status='employed';m.club=club;m.appointed=S.date;m.freeSince=null;m.pressure=0;m.form=0;
+    m.history=m.history||[];
+    m.history.push({club,from:S.date,to:null,note});
+    w.vacancies=w.vacancies.filter(v=>v.club!==club);
+    addManagerMoveV116('appointed',m,old,club,note+' de '+club);
+  }
+  function createVacancyV116(club,reason){
+    if(!club||club===S.club)return;
+    const w=worldV116();
+    if(!w.vacancies.some(v=>v.club===club)){
+      w.vacancies.push({club,opened:S.date,reason,prestige:clubPrestigeV116(club)});
+    }
+  }
+
+  function initializeWorldV116(){
+    const w=worldV116();
+    if(w.initialized)return;
+    const clubs=[...DB.clubs.keys()].filter(c=>DB.clubs.get(c)?.leagueId&&EURO_LEAGUES[DB.clubs.get(c).leagueId]);
+    for(const club of clubs){
+      if(club===S.club)continue;
+      const name=fallbackManagerNameV116(club),m=ensureManagerRecordV116(name,club,'employed');
+      // Evita que una misma identidad real ocupe dos clubes a la vez.
+      if(m.club&&m.club!==club){
+        const alt=ensureManagerRecordV116('Técnico de '+club,club,'employed');
+        w.assignments[club]=alt.id;
+      }else{
+        m.club=club;m.status='employed';
+        w.assignments[club]=m.id;
+      }
+    }
+
+    // El banquillo del usuario queda fuera del mercado de IA.
+    w.assignments[S.club]='__USER__';
+
+    // Si has creado tu propio entrenador, el técnico real desplazado queda libre.
+    if(S.managerStartModeV115==='custom'&&S.displacedManagerV115&&S.displacedManagerV115!=='Entrenador actual'){
+      const d=ensureManagerRecordV116(S.displacedManagerV115,S.club,'free');
+      closeManagerSpellV116(d,S.date,'Desplazado por la llegada de '+S.coach);
+      d.status='free';d.club=null;d.freeSince=S.date;d.appointed=null;
+      addManagerMoveV116('free',d,S.club,null,'Queda libre tras la llegada de '+S.coach);
+    }
+
+    w.initialized=true;
+  }
+
+  const ensureV116Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV116Base();
+    if(!S)return;
+    worldV116();
+    initializeWorldV116();
+  };
+
+  function managerAtClubV116(club){
+    if(club===S.club)return{name:S.coach,style:managerStyleV116(S.coach),prestige:S.reputation||50,user:true};
+    const w=worldV116(),id=w.assignments[club],m=id&&w.managers[id];
+    if(m)return m;
+    const name=fallbackManagerNameV116(club),rec=ensureManagerRecordV116(name,club,'employed');
+    w.assignments[club]=rec.id;return rec;
+  }
+  window.managerForClubV116=club=>managerAtClubV116(club)?.name||'Entrenador actual';
+
+  const managerProfileV116Base=managerProfileV7;
+  managerProfileV7=function(club){
+    const base=managerProfileV116Base(club),m=managerAtClubV116(club);
+    return{...base,name:m?.name||base.name,style:m?.style||base.style,prestige:m?.prestige};
+  };
+
+  function expectedRankV116(club){
+    const lid=DB.clubs.get(club)?.leagueId;
+    if(!lid)return 10;
+    const rows=getLeagueClubs(lid).map(c=>({c,r:clubRatingDB(c)})).sort((a,b)=>b.r-a.r);
+    return Math.max(1,rows.findIndex(x=>x.c===club)+1);
+  }
+  function actualRankV116(club){
+    const lid=DB.clubs.get(club)?.leagueId;
+    if(lid===S.leagueId&&S.standings?.[club]){
+      return Object.values(S.standings).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf).findIndex(x=>x.club===club)+1;
+    }
+    return null;
+  }
+  function updatePressureV116(m,club){
+    const actual=actualRankV116(club),expected=expectedRankV116(club);
+    let under=0;
+    if(actual){
+      under=Math.max(0,actual-expected);
+      m.form=clamp((m.form||0)+(expected-actual)*.18+(Math.random()*2-1),-10,10);
+    }else{
+      m.form=clamp((m.form||0)+(Math.random()*4-2)-m.pressure*.015,-10,10);
+      under=Math.max(0,Math.round(-m.form/2));
+    }
+    const tenure=m.appointed?dateDiff(m.appointed,S.date):999;
+    m.pressure=clamp((m.pressure||0)+(under>=5?8:under>=3?4:under>=1?1:-2)+(m.form<=-6?3:0),0,100);
+    if(tenure<60)m.pressure=Math.max(0,m.pressure-4);
+  }
+
+  function dismissManagersV116(){
+    const w=worldV116(),rows=[];
+    for(const [club,id] of Object.entries(w.assignments)){
+      if(club===S.club||id==='__USER__')continue;
+      const m=w.managers[id];if(!m||m.status!=='employed')continue;
+      updatePressureV116(m,club);
+      const tenure=m.appointed?dateDiff(m.appointed,S.date):999;
+      if(tenure>=55&&m.pressure>=58){
+        const chance=clamp(.08+(m.pressure-58)*.012,0,.52);
+        if(Math.random()<chance)rows.push({club,m});
+      }
+    }
+    rows.sort((a,b)=>b.m.pressure-a.m.pressure).slice(0,2).forEach(({club,m})=>{
+      makeFreeV116(m,club,'Despedido por malos resultados');
+      createVacancyV116(club,'Malos resultados');
+      addNews('Cambio de entrenador',club+' despide a '+m.name+' tras una mala racha.','entrenadores');
+      pushDayEventV7(S.date,{type:'world',text:'👔 '+club+' despide a '+m.name+'.'});
+    });
+  }
+
+  function freeDaysV116(m){return m.freeSince?Math.max(0,dateDiff(m.freeSince,S.date)):0}
+  function acceptsClubV116(m,club){
+    const cp=clubPrestigeV116(club),days=freeDaysV116(m);
+    const allowance=days>=300?16:days>=180?11:days>=90?7:4;
+    if(m.prestige>cp+allowance)return false;
+    if(EURO_LEAGUES[DB.clubs.get(club)?.leagueId]?.tier===2&&m.prestige>=88&&days<240)return false;
+    return true;
+  }
+  function candidateScoreV116(m,club){
+    const cp=clubPrestigeV116(club),distance=Math.abs(m.prestige-cp);
+    const unemployed=m.status==='free'?5+Math.min(8,freeDaysV116(m)/45):0;
+    const stepUp=m.status==='employed'&&clubPrestigeV116(m.club)<cp?6:0;
+    return 30-distance+unemployed+stepUp+Math.random()*8;
+  }
+  function chooseManagerV116(club){
+    const w=worldV116();
+    const free=Object.values(w.managers).filter(m=>m.status==='free'&&!m.controlledByUser&&acceptsClubV116(m,club));
+    let pool=[...free];
+
+    // Los clubes importantes pueden fichar un técnico que ya esté trabajando.
+    if(clubPrestigeV116(club)>=75&&Math.random()<.28){
+      pool.push(...Object.values(w.managers).filter(m=>
+        m.status==='employed'&&m.club&&m.club!==club&&m.club!==S.club&&!m.controlledByUser&&
+        clubPrestigeV116(club)>=clubPrestigeV116(m.club)+5&&acceptsClubV116(m,club)
+      ));
+    }
+    if(!pool.length){
+      const generated='Entrenador '+String(hashV7(club+'|'+S.date)).slice(-5);
+      return ensureManagerRecordV116(generated,null,'free');
+    }
+    return pool.sort((a,b)=>candidateScoreV116(b,club)-candidateScoreV116(a,club))[0];
+  }
+  function fillVacanciesV116(){
+    const w=worldV116();
+    const due=w.vacancies.filter(v=>dateDiff(v.opened,S.date)>=rnd(3,12)).slice(0,3);
+    for(const v of due){
+      if(v.club===S.club){w.vacancies=w.vacancies.filter(x=>x!==v);continue}
+      const m=chooseManagerV116(v.club);if(!m)continue;
+      const old=m.club;
+      appointV116(m,v.club,'Nuevo entrenador');
+      addNews('Nuevo entrenador',v.club+' contrata a '+m.name+(old?' procedente de '+old:'')+'.','entrenadores');
+      pushDayEventV7(S.date,{type:'world',text:'👔 '+m.name+' firma por '+v.club+'.'});
+    }
+  }
+
+  function weeklyManagerWorldV116(date){
+    const d=new Date(date+'T12:00:00Z');
+    if(d.getUTCDay()!==1)return;
+    const w=worldV116();
+    if(w.lastWeekly===date)return;
+    w.lastWeekly=date;
+    dismissManagersV116();
+    fillVacanciesV116();
+  }
+
+  const worldDayV116Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV116Base(date);
+    ensureV7State();
+    weeklyManagerWorldV116(date);
+  };
+
+  // Cuando tú cambias de club, el viejo banquillo queda libre y desplazas al técnico del nuevo.
+  const switchClubV116Base=switchClub;
+  switchClub=function(club,lid,budget){
+    ensureV7State();
+    const w=worldV116(),oldClub=S.club,newId=w.assignments[club];
+
+    if(oldClub&&oldClub!==club){
+      delete w.assignments[oldClub];
+      createVacancyV116(oldClub,'Salida de '+S.coach);
+    }
+    if(newId&&newId!=='__USER__'){
+      const displaced=w.managers[newId];
+      if(displaced)makeFreeV116(displaced,club,'Sale tras la llegada de '+S.coach);
+    }
+
+    switchClubV116Base(club,lid,budget);
+    w.assignments[club]='__USER__';
+    fillVacanciesV116();
+  };
+
+  // Si dimites o te despiden, tu antiguo club entra inmediatamente al mercado.
+  const fireManagerV116Base=fireManager;
+  fireManager=function(resigned){
+    ensureV7State();
+    const old=S.club,w=worldV116();
+    if(w.assignments[old]==='__USER__')delete w.assignments[old];
+    createVacancyV116(old,resigned?'Dimisión del entrenador':'Despido del entrenador');
+    fireManagerV116Base(resigned);
+  };
+
+  function managerCareerTextV116(m){
+    const h=(m.history||[]).slice(-3);
+    if(!h.length)return'Sin historial registrado';
+    return h.map(x=>x.club+' '+String(x.from||'').slice(0,4)+'–'+(x.to?String(x.to).slice(0,4):'actual')).join(' · ');
+  }
+
+  const renderCareerV116Base=renderCareerV7;
+  renderCareerV7=function(){
+    renderCareerV116Base();
+    ensureV7State();
+    const w=worldV116();
+    const moves=w.moves.slice(0,8);
+    const free=Object.values(w.managers).filter(m=>m.status==='free')
+      .sort((a,b)=>b.prestige-a.prestige).slice(0,6);
+    const card=document.createElement('div');
+    card.className='card manager-world-v116';
+    card.innerHTML=
+      '<div class="row"><h3 style="margin:0">👔 Mundo de entrenadores</h3><span class="spacer"></span><span class="badge">'+Object.keys(w.managers).length+' técnicos</span></div>'+
+      '<div class="manager-market-v116">'+
+        '<div><strong>Últimos movimientos</strong><div style="margin-top:5px">'+
+          (moves.length?moves.map(x=>'<div class="manager-move-v116"><div><strong>'+esc(x.manager)+'</strong><div class="muted">'+esc(x.text)+'</div></div><small>'+dateStr(x.date)+'</small></div>').join(''):'<div class="empty">Todavía no ha habido cambios de banquillo.</div>')+
+        '</div></div>'+
+        '<div><strong>Entrenadores libres</strong><div style="margin-top:5px">'+
+          (free.length?free.map(m=>'<div class="manager-free-v116"><div class="row"><div><strong>'+esc(m.name)+'</strong><div class="manager-career-v116">'+esc(managerCareerTextV116(m))+'</div></div><span class="manager-prestige-v116">REP '+m.prestige+'</span></div><div class="manager-status-v116">'+freeDaysV116(m)+' días sin equipo</div></div>').join(''):'<div class="empty">No hay técnicos destacados libres.</div>')+
+        '</div></div>'+
+      '</div>';
+    els.view.appendChild(card);
+  };
+})();
+
 loadDB();
 })();
 </script>
