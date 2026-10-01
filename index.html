@@ -4625,6 +4625,603 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== CAREER STORY ENGINE 10.10 =====
+// El pasado vuelve: historias contextuales, decisiones y capítulos que pueden reaparecer meses después.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.story-alert-v110{border-color:#6c4f92!important;background:#1a1027!important;color:#eadbff!important}'+
+    '.story-box-v110{padding:14px;border:1px solid #57416f;border-radius:15px;background:linear-gradient(145deg,#191024,#0b1310)}'+
+    '.story-head-v110{display:flex;gap:11px;align-items:flex-start}.story-icon-v110{font-size:30px;line-height:1}'+
+    '.story-kicker-v110{font-size:10px;font-weight:900;color:#c9a9ef;text-transform:uppercase;letter-spacing:.08em}'+
+    '.story-body-v110{font-size:14px;line-height:1.55;margin:12px 0;color:#dce7df}'+
+    '.story-origin-v110{padding:8px 10px;border-left:3px solid #70518d;background:#120d19;border-radius:8px;font-size:11px;color:var(--muted);margin:9px 0}'+
+    '.story-actions-v110{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}'+
+    '.story-actions-v110 .btn{min-height:58px;text-align:left}.story-actions-v110 small{display:block;color:#b8c6bd;margin-top:4px;font-weight:500}'+
+    '.story-thread-v110{padding:10px 0;border-bottom:1px solid #1d2c24}.story-thread-v110:last-child{border-bottom:0}'+
+    '.story-status-v110{font-size:9px;font-weight:900;padding:3px 6px;border-radius:999px;border:1px solid var(--line)}'+
+    '.story-status-v110.active{color:#e3c7ff;border-color:#694d82}.story-status-v110.waiting{color:#ffd77b;border-color:#705d32}.story-status-v110.resolved{color:#8ddfab;border-color:#345f44}'+
+    '.story-chapter-v110{font-size:10px;color:var(--muted);margin-top:4px}'+
+    '@media(max-width:700px){.story-actions-v110{grid-template-columns:1fr}.story-actions-v110 .btn{min-height:48px}.story-box-v110{padding:11px}.story-body-v110{font-size:13px}}';
+  document.head.appendChild(style);
+
+  const ensureV110Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV110Base();
+    if(!S)return;
+    S.storyEngine=S.storyEngine||{};
+    S.storyEngine.threads=S.storyEngine.threads||[];
+    S.storyEngine.history=S.storyEngine.history||[];
+    S.storyEngine.usedKeys=S.storyEngine.usedKeys||{};
+    S.storyEngine.lastCheck=S.storyEngine.lastCheck||null;
+    S.storyEngine.cooldownUntil=S.storyEngine.cooldownUntil||null;
+    S.advanceStops=S.advanceStops||{};
+    if(S.advanceStops.story===undefined)S.advanceStops.story=true;
+  };
+
+  function storyIdV110(){
+    return 'ST'+S.date.replaceAll('-','')+'-'+Math.random().toString(36).slice(2,7);
+  }
+  function activeStoryV110(){
+    return (S.storyEngine?.threads||[]).find(x=>x.status==='active')||null;
+  }
+  function playerV110(id){return S.players.find(x=>String(x.id)===String(id))||null}
+  function playerRelV110(p){
+    if(!p||!p.id)return null;
+    S.managerRelations=S.managerRelations||{};
+    const id=String(p.id);
+    return S.managerRelations[id]||(S.managerRelations[id]={score:0,memories:[],clubs:[],firstMet:S.date,lastInteraction:S.date});
+  }
+  function rememberPlayerV110(p,delta,text,type='story'){
+    const r=playerRelV110(p);if(!r)return;
+    r.score=clamp((r.score||0)+delta,-100,100);
+    r.memories=r.memories||[];r.clubs=r.clubs||[];
+    if(S.club&&!r.clubs.includes(S.club))r.clubs.push(S.club);
+    r.lastInteraction=S.date;
+    const mem={date:S.date,type,text,club:S.club,delta};
+    r.memories.unshift(mem);r.memories=r.memories.slice(0,16);
+    S.managerMemoryFeed=S.managerMemoryFeed||[];
+    S.managerMemoryFeed.unshift({playerId:p.id,player:p.name,...mem,score:r.score});
+    S.managerMemoryFeed=S.managerMemoryFeed.slice(0,100);
+  }
+  function externalV110(kind,id){
+    S.externalRelations=S.externalRelations||{agents:{},journalists:{},managers:{}};
+    S.externalRelations[kind]=S.externalRelations[kind]||{};
+    return S.externalRelations[kind][id]||null;
+  }
+  function rememberExternalV110(kind,id,delta,text){
+    const r=externalV110(kind,id);if(!r)return;
+    r.score=clamp((r.score||0)+delta,-100,100);
+    r.memories=r.memories||[];
+    r.memories.unshift({date:S.date,text,delta});
+    r.memories=r.memories.slice(0,12);
+    S.externalMemory=S.externalMemory||[];
+    S.externalMemory.unshift({date:S.date,kind,id,text,delta});
+    S.externalMemory=S.externalMemory.slice(0,100);
+  }
+  function shortlistV110(p){
+    if(!p)return;
+    S.shortlist=S.shortlist||[];
+    if(!S.shortlist.includes(p.id))S.shortlist.push(p.id);
+  }
+  function jobOfferV110(club){
+    if(!club||club===S.club)return false;
+    const data=DB.clubs.get(club),lid=data?.leagueId;
+    if(!lid)return false;
+    S.offers=S.offers||[];
+    if(!S.offers.some(x=>x.club===club))S.offers.push({club,leagueId:lid,budget:budgetFor(club),story:true});
+    return true;
+  }
+  function weightedStoryV110(rows){
+    if(!rows.length)return null;
+    const total=rows.reduce((a,x)=>a+(x.weight||1),0);
+    let roll=Math.random()*total;
+    for(const x of rows){roll-=x.weight||1;if(roll<=0)return x}
+    return rows[rows.length-1];
+  }
+  function usedV110(key){return !!S.storyEngine.usedKeys[key]}
+  function markUsedV110(key){if(key)S.storyEngine.usedKeys[key]=S.date}
+  function addCandidateV110(rows,x){if(x&&!usedV110(x.key))rows.push(x)}
+
+  function buildCandidatesV110(){
+    ensureV7State();
+    const rows=[],next=nextFixture();
+    const rels=S.managerRelations||{};
+
+    // Canterano al que abriste la puerta y que ahora está lejos de ti.
+    for(const [id,info] of Object.entries(S.managerProspects||{})){
+      const p=playerV110(id),r=rels[String(id)];
+      if(!p||p.club===S.club||p.club==='Retirado'||!r)continue;
+      if((r.score||0)<5)continue;
+      addCandidateV110(rows,{key:'prospect:'+id,type:'prospect_return',weight:8,payload:{playerId:p.id,originClub:info.club||r.clubs?.[0]||''}});
+    }
+
+    // Una promesa incumplida vuelve a salir a la luz.
+    for(const [id,r] of Object.entries(rels)){
+      const p=playerV110(id);if(!p)continue;
+      const broken=(r.memories||[]).find(m=>m.type==='promise_broken'||/Incumpliste una promesa/i.test(m.text||''));
+      if(!broken)continue;
+      addCandidateV110(rows,{key:'broken:'+id+':'+broken.date,type:'broken_promise',weight:(r.score||0)<=-20?10:6,payload:{playerId:p.id,memoryDate:broken.date,memoryClub:broken.club||''}});
+    }
+
+    // Excapitán que todavía mantiene una historia contigo.
+    for(const [id,r] of Object.entries(rels)){
+      const p=playerV110(id);if(!p||p.club===S.club||p.club==='Retirado')continue;
+      const cap=(r.memories||[]).find(m=>/brazalete de capitán|capitanía/i.test(m.text||''));
+      if(!cap)continue;
+      addCandidateV110(rows,{key:'captain:'+id,type:'former_captain',weight:5,payload:{playerId:p.id,originClub:cap.club||''}});
+    }
+
+    // Jugador vendido que vuelve a ser noticia.
+    for(const t of (S.transfers||[]).filter(x=>x.type==='OUT'&&x.date&&dateDiff(x.date,S.date)>=90)){
+      const p=S.players.find(x=>x.name===t.player);
+      if(!p||p.club===S.club||p.club==='Retirado')continue;
+      addCandidateV110(rows,{key:'sold:'+t.player+':'+t.date,type:'sold_player',weight:5,payload:{playerId:p.id,soldFrom:t.from||'',soldTo:t.to||p.club,fee:t.fee||0}});
+    }
+
+    // Retirada de alguien con quien tienes recuerdos.
+    for(const [id,r] of Object.entries(rels)){
+      const p=playerV110(id);
+      if(!p||p.club!=='Retirado'||!(r.memories||[]).length)continue;
+      addCandidateV110(rows,{key:'retire:'+id,type:'retirement',weight:6,payload:{playerId:p.id}});
+    }
+
+    // Agentes con buena relación que te acercan oportunidades.
+    for(const [agentId,r] of Object.entries(S.externalRelations?.agents||{})){
+      if((r.score||0)<24)continue;
+      const ps=S.players.filter(p=>p.club!==S.club&&p.club!=='Retirado'&&p.age<=27&&p.potential>=76)
+        .filter(p=>{try{return window.agentForPlayerV106?.(p)?.id===agentId}catch(e){return false}})
+        .sort((a,b)=>(b.potential||0)-(a.potential||0)).slice(0,12);
+      const p=pick(ps);if(!p)continue;
+      addCandidateV110(rows,{key:'agenttip:'+agentId+':'+p.id,type:'agent_tip',weight:7,payload:{agentId,playerId:p.id}});
+    }
+
+    // Agentes tensos pueden abrir un frente con uno de tus futbolistas.
+    for(const [agentId,r] of Object.entries(S.externalRelations?.agents||{})){
+      if((r.score||0)>-24)continue;
+      const ps=getClubPlayers(S.club).filter(p=>{
+        try{return window.agentForPlayerV106?.(p)?.id===agentId}catch(e){return false}
+      }).filter(p=>(p.morale||70)<72||daysToContractSafeV110(p)<540);
+      const p=pick(ps);if(!p)continue;
+      addCandidateV110(rows,{key:'agentpressure:'+agentId+':'+p.id+':'+S.season,type:'agent_pressure',weight:8,payload:{agentId,playerId:p.id}});
+    }
+
+    // Periodistas con una relación fuerte contigo rescatan historias anteriores.
+    for(const [jid,r] of Object.entries(S.externalRelations?.journalists||{})){
+      if(Math.abs(r.score||0)<22)continue;
+      addCandidateV110(rows,{key:'media:'+jid+':'+S.season,type:'media_echo',weight:5,payload:{journalistId:jid}});
+    }
+
+    // Reencuentro con entrenador rival.
+    if(next&&dateDiff(S.date,next.date)<=8){
+      const opp=next.home===S.club?next.away:next.home;
+      const mgr=Object.entries(S.externalRelations?.managers||{}).find(([,r])=>(r.clubs||[]).includes(opp)&&(r.meetings||0)>=2&&(r.rivalry||0)>=9);
+      if(mgr)addCandidateV110(rows,{key:'rival:'+next.id,type:'rival_rematch',weight:11,payload:{managerId:mgr[0],opp,fixtureId:next.id}});
+    }
+
+    // Regreso a un antiguo club como rival.
+    if(next&&dateDiff(S.date,next.date)<=8){
+      const opp=next.home===S.club?next.away:next.home;
+      if((S.managerClubs||[]).includes(opp)&&opp!==S.club){
+        addCandidateV110(rows,{key:'oldmatch:'+next.id,type:'old_club_match',weight:10,payload:{club:opp,fixtureId:next.id}});
+      }
+    }
+
+    // Un antiguo club vuelve a pensar en ti.
+    if((S.reputation||0)>=50){
+      for(const club of (S.managerClubs||[]).filter(c=>c&&c!==S.club&&DB.clubs.has(c))){
+        addCandidateV110(rows,{key:'formerclub:'+club+':'+S.season,type:'former_club_call',weight:4,payload:{club}});
+      }
+    }
+
+    return rows;
+  }
+
+  function daysToContractSafeV110(p){
+    if(!p?.contractUntil)return 9999;
+    return dateDiff(S.date,p.contractUntil);
+  }
+
+  function makeStoryV110(c){
+    return{
+      id:storyIdV110(),key:c.key,type:c.type,payload:c.payload||{},
+      status:'active',stage:1,created:S.date,activated:S.date,updated:S.date,
+      chapters:[],choice:null,outcome:null,nextAt:null
+    };
+  }
+
+  function storyViewV110(story){
+    const p=playerV110(story.payload?.playerId);
+    const rel=p?playerRelV110(p):null;
+    const a=story.payload?.agentId?externalV110('agents',story.payload.agentId):null;
+    const j=story.payload?.journalistId?externalV110('journalists',story.payload.journalistId):null;
+    const m=story.payload?.managerId?externalV110('managers',story.payload.managerId):null;
+
+    if(story.type==='prospect_return'){
+      if(story.stage===1)return{
+        icon:'🌱',title:'Un canterano no se olvida de ti',origin:'Todo empezó cuando le abriste la puerta del primer equipo.',
+        body:(p?.name||'Un antiguo canterano')+' juega ahora en '+escTextV110(p?.club||'otro club')+' y ha hecho llegar un mensaje: todavía recuerda que tú confiaste en él al principio.',
+        choices:[
+          ['prospect_keep','Mantener la puerta abierta','Le haces saber que seguirás pendiente de su carrera.'],
+          ['prospect_well','Desearle suerte','Buen gesto, pero sin crear expectativas.'],
+          ['prospect_close','Cerrar esa etapa','Le dejas claro que ahora vuestros caminos son distintos.']
+        ]};
+      return{
+        icon:'🔁',title:'La historia del canterano vuelve',origin:'Hace un tiempo decidiste mantener el contacto.',
+        body:'El entorno de '+(p?.name||'tu antiguo jugador')+' vuelve a llamarte. Su nombre está otra vez sobre la mesa y un reencuentro ya no parece imposible.',
+        choices:[
+          ['prospect_reunion','Explorar un reencuentro','Lo añades a seguimiento y haces saber que escucharías condiciones.'],
+          ['prospect_watch','Seguir observándolo','No cierras la puerta, pero tampoco aceleras.'],
+          ['prospect_notnow','No es el momento','Cierras este capítulo por ahora.']
+        ]};
+    }
+
+    if(story.type==='broken_promise'){
+      if(story.stage===1)return{
+        icon:'🤝',title:'Una vieja promesa vuelve a perseguirte',origin:'La historia nació de una promesa que no cumpliste.',
+        body:'En una entrevista, '+(p?.name||'un jugador')+' ha recordado una promesa que quedó pendiente durante vuestra etapa juntos. La prensa vuelve a preguntarte por aquella decisión.',
+        choices:[
+          ['broken_call','Llamarle en privado','Intentas arreglar la relación lejos de los focos.'],
+          ['broken_defend','Defender tu decisión','Explicas que decidiste pensando en el equipo.'],
+          ['broken_ignore','No entrar al tema','No quieres reabrir una historia antigua.']
+        ]};
+      return{
+        icon:'☎️',title:'La llamada tuvo consecuencias',origin:'Decidiste contactar después de que reapareciera la promesa incumplida.',
+        body:(rel?.score||0)>=-10?(p?.name||'El jugador')+' ha valorado que dieras el paso. No borra lo ocurrido, pero la relación puede empezar a cerrarse.':(p?.name||'El jugador')+' ha escuchado tus explicaciones, aunque sigue dolido por cómo terminó aquella historia.',
+        choices:[
+          ['broken_private','Cerrar el tema en privado','No necesitáis convertirlo en un espectáculo público.'],
+          ['broken_public','Reconocerlo públicamente','Asumes parte de responsabilidad delante de la prensa.'],
+          ['broken_move','Pasar página','Consideras que ya has hecho lo que podías.']
+        ]};
+    }
+
+    if(story.type==='former_captain'){
+      if(story.stage===1)return{
+        icon:'©️',title:'Tu antiguo capitán pide consejo',origin:'Fue uno de los líderes a los que entregaste el brazalete.',
+        body:(p?.name||'Tu antiguo capitán')+' atraviesa un momento importante de su carrera en '+escTextV110(p?.club||'su club')+' y te llama antes de tomar una decisión sobre su futuro.',
+        choices:[
+          ['captain_advise','Aconsejarle como antes','Recuperas por un momento aquella relación de vestuario.'],
+          ['captain_reunion','Decirle que le seguirías de cerca','Le haces saber que un reencuentro no sería descartable.'],
+          ['captain_distance','No interferir','Prefieres que tome la decisión con su entorno actual.']
+        ]};
+      return{
+        icon:'🧭',title:'Tu antiguo capitán toma una decisión',origin:'Meses atrás volvió a pedirte consejo.',
+        body:(p?.name||'El jugador')+' te agradece aquella conversación. Antes de cerrar su siguiente paso, vuelve a preguntarte si de verdad lo tendrías en cuenta en el futuro.',
+        choices:[
+          ['captain_track','Mantenerlo en tu radar','Lo añades a seguimiento.'],
+          ['captain_friend','Mantener solo la relación personal','Seguís en contacto sin mezclarlo con fichajes.'],
+          ['captain_end','Cerrar el capítulo','Le deseas suerte y seguís caminos separados.']
+        ]};
+    }
+
+    if(story.type==='sold_player'){
+      if(story.stage===1)return{
+        icon:'📈',title:'Un jugador que vendiste vuelve a ser protagonista',origin:'Salió de '+escTextV110(story.payload.soldFrom||'tu antiguo equipo')+' por '+euro(story.payload.fee||0)+'.',
+        body:(p?.name||'El jugador')+' vuelve a aparecer en titulares desde '+escTextV110(p?.club||story.payload.soldTo||'su nuevo club')+'. Los periodistas te preguntan si fue un error dejarle marchar.',
+        choices:[
+          ['sold_praise','Alegrarte por él','Pones la relación personal por encima del orgullo.'],
+          ['sold_defend','Defender la venta','Insistes en que era la decisión correcta en aquel momento.'],
+          ['sold_regret','Admitir que quizá te equivocaste','Una respuesta poco habitual para un entrenador.']
+        ]};
+      return{
+        icon:'💬',title:'El exjugador responde a tus palabras',origin:'Le elogiaste públicamente cuando volvió a ser noticia.',
+        body:(p?.name||'El jugador')+' ha agradecido tus palabras y recuerda positivamente vuestra etapa. Lo que parecía una despedida definitiva deja una pequeña puerta abierta.',
+        choices:[
+          ['sold_call','Escribirle personalmente','Refuerzas todavía más el vínculo.'],
+          ['sold_public','Dejarlo en un gesto público','No necesitas ir más allá.'],
+          ['sold_move','Seguir con tu proyecto','La historia queda como un buen recuerdo.']
+        ]};
+    }
+
+    if(story.type==='retirement')return{
+      icon:'👋',title:'Se retira alguien que formó parte de tu historia',origin:'Vuestras decisiones compartidas siguen guardadas en la memoria de tu carrera.',
+      body:(p?.name||'Un antiguo jugador')+' ha anunciado su retirada. En su despedida recuerda etapas y entrenadores que marcaron su carrera.',
+      choices:[
+        ['retire_call','Llamarle personalmente','Un gesto privado para cerrar una etapa.'],
+        ['retire_tribute','Publicar un homenaje','Reconoces públicamente lo que aportó.'],
+        ['retire_quiet','Dejarle su momento','No conviertes su despedida en una historia sobre ti.']
+      ]};
+
+    if(story.type==='agent_tip'){
+      if(story.stage===1)return{
+        icon:'🤝',title:'Un agente te llama antes que a los demás',origin:'La buena relación que has construido empieza a tener ventajas reales.',
+        body:(a?.name||'Un agente')+' te habla de '+(p?.name||'un jugador')+', '+(p?.age||'')+' años, actualmente en '+escTextV110(p?.club||'otro club')+'. Cree que encajaría contigo y te da la información antes de moverlo.',
+        choices:[
+          ['agent_scout','Pedir un informe y seguirlo','Lo añades a tu lista y mantienes el contacto.'],
+          ['agent_terms','Preguntar directamente por condiciones','Le muestras que el interés es serio.'],
+          ['agent_decline','Agradecer y rechazar','No todos los favores tienen que convertirse en fichajes.']
+        ]};
+      return{
+        icon:'📞',title:'El agente vuelve con novedades',origin:'Decidiste seguir al jugador que te ofreció en privado.',
+        body:(a?.name||'El agente')+' vuelve a contactar. La situación de '+(p?.name||'su jugador')+' se ha movido y quiere saber si vas a dar prioridad al asunto.',
+        choices:[
+          ['agent_priority','Decirle que es prioridad','Refuerzas la relación y mantienes al jugador seguido.'],
+          ['agent_wait','Seguir observando','No te precipitas.'],
+          ['agent_walk','Retirarte','Cierras la operación sin romper la relación.']
+        ]};
+    }
+
+    if(story.type==='agent_pressure'){
+      if(story.stage===1)return{
+        icon:'💼',title:'Un agente con el que chocaste mueve ficha',origin:'La relación con '+escTextV110(a?.name||'este agente')+' lleva tiempo deteriorada.',
+        body:(a?.name||'El representante')+' te avisa de que '+(p?.name||'su jugador')+' está revisando su futuro. No sabes cuánto hay de preocupación real y cuánto de presión negociadora.',
+        choices:[
+          ['pressure_meet','Sentarte a hablar','Intentas rebajar la tensión con el agente y el jugador.'],
+          ['pressure_firm','Mantenerte firme','No vas a dirigir el club según las presiones de un representante.'],
+          ['pressure_player','Hablar solo con el jugador','Intentas separar la relación personal del conflicto con su agente.']
+        ]};
+      return{
+        icon:'⚖️',title:'La reunión con el agente deja una decisión pendiente',origin:'Elegiste rebajar la tensión cara a cara.',
+        body:(a?.name||'El agente')+' baja algo el tono, pero quiere una señal concreta para '+(p?.name||'su jugador')+'. No exige una firma hoy, sí saber qué lugar ocupa en tus planes.',
+        choices:[
+          ['pressure_role','Prometer revisar su rol','Mejoras el ánimo sin firmar un nuevo contrato.'],
+          ['pressure_contract','Abrir la puerta a una renovación','El jugador interpreta que cuentas con él.'],
+          ['pressure_none','No hacer promesas','La reunión termina sin compromisos.']
+        ]};
+    }
+
+    if(story.type==='media_echo')return{
+      icon:'🎙️',title:'Un periodista rescata una vieja historia',origin:'Tu relación con '+escTextV110(j?.name||'este periodista')+' ya tiene antecedentes.',
+      body:(j?.name||'Un periodista')+' publica una pieza repasando decisiones de tu carrera y vuelve a poner una de tus etapas pasadas en el centro de la conversación.',
+      choices:[
+        ['media_context','Dar contexto con calma','Intentas controlar el relato sin atacar al medio.'],
+        ['media_attack','Responder con dureza','Conviertes la historia en un choque público.'],
+        ['media_ignore','No responder','Dejas que la noticia siga su curso.']
+      ]};
+
+    if(story.type==='rival_rematch')return{
+      icon:'🔥',title:'Tu rival vuelve a cruzarse en el camino',origin:'Ya os habéis enfrentado '+(m?.meetings||0)+' veces.',
+      body:(m?.name||'El entrenador rival')+' habla antes del partido contra '+escTextV110(story.payload.opp||'el rival')+'. La prensa presenta el encuentro como otro capítulo de vuestra rivalidad de banquillos.',
+      choices:[
+        ['rival_respect','Mostrar respeto','Rebajas el ruido y centras el foco en el partido.'],
+        ['rival_fire','Subir la temperatura','Aceptas el duelo personal y enciendes la previa.'],
+        ['rival_ignore','No hablar de él','Te niegas a alimentar la narrativa.']
+      ]};
+
+    if(story.type==='old_club_match')return{
+      icon:'🏟️',title:'Vuelves a enfrentarte a un antiguo club',origin:'Ya formó parte de tu camino como entrenador.',
+      body:'El próximo partido te enfrenta a '+escTextV110(story.payload.club||'un antiguo club')+'. Afición, prensa y antiguos conocidos convierten una jornada normal en algo mucho más personal.',
+      choices:[
+        ['oldclub_emotion','Reconocer que será especial','No escondes el vínculo con tu pasado.'],
+        ['oldclub_focus','Tratarlo como un partido más','Intentas quitar emoción al encuentro.'],
+        ['oldclub_edge','Usar el pasado como motivación','Quieres demostrar cuánto has crecido desde entonces.']
+      ]};
+
+    if(story.type==='former_club_call'){
+      if(story.stage===1)return{
+        icon:'☎️',title:'Un antiguo club vuelve a llamar',origin:'Ya entrenaste a '+escTextV110(story.payload.club||'ese club')+' en otra etapa de tu carrera.',
+        body:'Una persona de '+escTextV110(story.payload.club||'tu antiguo club')+' contacta discretamente contigo. No hay oferta formal todavía: quieren saber si escucharías un regreso en el futuro.',
+        choices:[
+          ['club_listen','Escuchar sin comprometerte','Dejas abierta una conversación para más adelante.'],
+          ['club_affection','Agradecer el interés','Reconoces el vínculo, pero sigues centrado en tu club.'],
+          ['club_close','Cerrar la puerta','No contemplas volver.']
+        ]};
+      return{
+        icon:'📄',title:'El antiguo club concreta su interés',origin:'Meses atrás aceptaste escucharles sin comprometerte.',
+        body:escTextV110(story.payload.club||'El club')+' vuelve con una conversación mucho más seria. Esta vez están dispuestos a enviar una oferta para que puedas valorarla en Carrera.',
+        choices:[
+          ['club_offer','Que envíen la oferta','La propuesta aparecerá en tu apartado de Carrera.'],
+          ['club_stay','Decir que ahora no','No quieres abrir un proceso de salida.'],
+          ['club_future','Mantener contacto para otro momento','La puerta sigue abierta, pero no esta temporada.']
+        ]};
+    }
+
+    return{icon:'📖',title:'Una historia de tu carrera vuelve',origin:'El mundo recuerda tus decisiones.',body:'Algo de tu pasado vuelve a aparecer.',choices:[['generic_ok','Continuar','La carrera sigue.']]};
+  }
+
+  function escTextV110(x){return String(x||'')}
+
+  function recordChapterV110(story,choiceLabel,outcome){
+    story.chapters=story.chapters||[];
+    story.chapters.push({date:S.date,stage:story.stage,choice:choiceLabel,outcome});
+    story.updated=S.date;story.choice=choiceLabel;story.outcome=outcome;
+    S.storyEngine.history.unshift({storyId:story.id,date:S.date,type:story.type,stage:story.stage,choice:choiceLabel,outcome});
+    S.storyEngine.history=S.storyEngine.history.slice(0,120);
+  }
+  function waitStoryV110(story,days,choiceLabel,outcome){
+    recordChapterV110(story,choiceLabel,outcome);
+    story.status='waiting';
+    story.nextAt=isoAdd(S.date,days);
+    story.stage=(story.stage||1)+1;
+    S.storyEngine.cooldownUntil=isoAdd(S.date,rnd(10,18));
+  }
+  function resolveStoryV110(story,choiceLabel,outcome){
+    recordChapterV110(story,choiceLabel,outcome);
+    story.status='resolved';story.resolved=S.date;story.nextAt=null;
+    S.storyEngine.cooldownUntil=isoAdd(S.date,rnd(14,28));
+  }
+
+  function applyStoryChoiceV110(story,action,label){
+    const p=playerV110(story.payload?.playerId);
+    const aId=story.payload?.agentId,jId=story.payload?.journalistId,mId=story.payload?.managerId;
+
+    if(action==='prospect_keep'){rememberPlayerV110(p,6,'Mantuviste abierta la puerta a un futuro reencuentro');shortlistV110(p);waitStoryV110(story,rnd(35,80),label,'Seguiste de cerca su carrera.')}
+    else if(action==='prospect_well'){rememberPlayerV110(p,2,'Le deseaste suerte en su nueva etapa');resolveStoryV110(story,label,'La relación quedó en buenos términos.')}
+    else if(action==='prospect_close'){rememberPlayerV110(p,-4,'Cerraste la puerta a retomar vuestra etapa juntos');resolveStoryV110(story,label,'La distancia entre ambos aumentó.')}
+    else if(action==='prospect_reunion'){rememberPlayerV110(p,7,'Mostraste interés real en volver a trabajar juntos');shortlistV110(p);p.storyReunionInterestUntil=isoAdd(S.date,90);resolveStoryV110(story,label,'El jugador sabe que aceptarías explorar un regreso.')}
+    else if(action==='prospect_watch'){rememberPlayerV110(p,2,'Decidiste seguir observando su evolución');shortlistV110(p);resolveStoryV110(story,label,'Seguirá en tu radar.')}
+    else if(action==='prospect_notnow'){rememberPlayerV110(p,-1,'Decidiste que no era el momento para un reencuentro');resolveStoryV110(story,label,'El capítulo queda aparcado.')}
+
+    else if(action==='broken_call'){rememberPlayerV110(p,7,'Le llamaste para hablar de la antigua promesa incumplida');waitStoryV110(story,rnd(25,60),label,'Intentaste reparar la relación en privado.')}
+    else if(action==='broken_defend'){rememberPlayerV110(p,-4,'Defendiste públicamente la decisión que rompió vuestra promesa');S.reputation=clamp(S.reputation+.25,1,100);resolveStoryV110(story,label,'La polémica se apagó, pero la relación personal empeoró.')}
+    else if(action==='broken_ignore'){rememberPlayerV110(p,-2,'Evitaste responder cuando reapareció la promesa incumplida');resolveStoryV110(story,label,'La historia quedó sin una reconciliación.')}
+    else if(action==='broken_private'){rememberPlayerV110(p,4,'Cerraste en privado el conflicto por la promesa');resolveStoryV110(story,label,'El pasado pesa un poco menos entre ambos.')}
+    else if(action==='broken_public'){rememberPlayerV110(p,6,'Reconociste públicamente que aquella promesa no se gestionó bien');S.reputation=clamp(S.reputation+.35,1,100);resolveStoryV110(story,label,'El gesto público mejoró vuestra relación.')}
+    else if(action==='broken_move'){rememberPlayerV110(p,-1,'Decidiste no seguir revisitando la antigua promesa');resolveStoryV110(story,label,'Ambos siguieron adelante.')}
+
+    else if(action==='captain_advise'){rememberPlayerV110(p,5,'Volviste a aconsejarle como cuando era tu capitán');waitStoryV110(story,rnd(40,95),label,'La confianza personal entre ambos reapareció.')}
+    else if(action==='captain_reunion'){rememberPlayerV110(p,5,'Le hiciste saber que un futuro reencuentro sería posible');shortlistV110(p);waitStoryV110(story,rnd(35,80),label,'Quedó una puerta abierta entre ambos.')}
+    else if(action==='captain_distance'){rememberPlayerV110(p,-1,'Preferiste no intervenir en la decisión de tu antiguo capitán');resolveStoryV110(story,label,'La relación quedó cordial pero distante.')}
+    else if(action==='captain_track'){rememberPlayerV110(p,4,'Mantuviste a tu antiguo capitán en el radar');shortlistV110(p);resolveStoryV110(story,label,'Podríais volver a coincidir.')}
+    else if(action==='captain_friend'){rememberPlayerV110(p,3,'Elegiste conservar la relación personal sin mezclar fichajes');resolveStoryV110(story,label,'El vínculo continúa fuera del mercado.')}
+    else if(action==='captain_end'){rememberPlayerV110(p,-2,'Cerraste definitivamente la posibilidad de volver a trabajar juntos');resolveStoryV110(story,label,'La etapa quedó atrás.')}
+
+    else if(action==='sold_praise'){rememberPlayerV110(p,4,'Te alegraste públicamente de su éxito después de venderle');waitStoryV110(story,rnd(20,50),label,'Tus palabras llegaron al jugador.')}
+    else if(action==='sold_defend'){rememberPlayerV110(p,-2,'Defendiste públicamente la decisión de venderle');S.board=clamp(S.board+.3,0,100);resolveStoryV110(story,label,'Sostuviste tu decisión, aunque el vínculo se enfrió.')}
+    else if(action==='sold_regret'){rememberPlayerV110(p,3,'Admitiste que quizá te equivocaste al dejarle salir');S.reputation=clamp(S.reputation+.2,1,100);resolveStoryV110(story,label,'La sinceridad llamó la atención de la prensa.')}
+    else if(action==='sold_call'){rememberPlayerV110(p,4,'Le escribiste después de que respondiera a tus elogios');shortlistV110(p);resolveStoryV110(story,label,'Volvisteis a tener contacto directo.')}
+    else if(action==='sold_public'){rememberPlayerV110(p,2,'Dejaste el reencuentro en un intercambio público de respeto');resolveStoryV110(story,label,'La historia cerró con buen tono.')}
+    else if(action==='sold_move'){resolveStoryV110(story,label,'El buen recuerdo quedó ahí, sin nuevos movimientos.')}
+
+    else if(action==='retire_call'){rememberPlayerV110(p,5,'Le llamaste personalmente el día de su retirada');resolveStoryV110(story,label,'Cerrasteis vuestra historia con una conversación personal.')}
+    else if(action==='retire_tribute'){rememberPlayerV110(p,3,'Le dedicaste un homenaje público al retirarse');S.reputation=clamp(S.reputation+.25,1,100);resolveStoryV110(story,label,'Tu homenaje formó parte de su despedida.')}
+    else if(action==='retire_quiet'){resolveStoryV110(story,label,'Elegiste dejar que su despedida hablara por sí sola.')}
+
+    else if(action==='agent_scout'){shortlistV110(p);rememberExternalV110('agents',aId,3,'Valoraste una recomendación que te ofreció antes que al mercado');waitStoryV110(story,rnd(20,50),label,'El agente sabe que estás siguiendo al jugador.')}
+    else if(action==='agent_terms'){shortlistV110(p);rememberExternalV110('agents',aId,2,'Preguntaste directamente por las condiciones de su jugador');p.storyAgentPriorityUntil=isoAdd(S.date,60);resolveStoryV110(story,label,'El agente interpreta que existe interés serio.')}
+    else if(action==='agent_decline'){rememberExternalV110('agents',aId,-1,'Rechazaste con educación una recomendación privada');resolveStoryV110(story,label,'La relación se mantiene, aunque esta oportunidad se cerró.')}
+    else if(action==='agent_priority'){shortlistV110(p);rememberExternalV110('agents',aId,4,'Le dijiste que su jugador era una prioridad');p.storyAgentPriorityUntil=isoAdd(S.date,90);resolveStoryV110(story,label,'El agente te considera una opción prioritaria si la situación se mueve.')}
+    else if(action==='agent_wait'){rememberExternalV110('agents',aId,1,'Pediste más tiempo antes de mover ficha');resolveStoryV110(story,label,'Mantienes el canal abierto.')}
+    else if(action==='agent_walk'){rememberExternalV110('agents',aId,0,'Cerraste una vía de mercado sin deteriorar la relación');resolveStoryV110(story,label,'La operación se enfría.')}
+
+    else if(action==='pressure_meet'){rememberExternalV110('agents',aId,5,'Aceptaste sentarte a rebajar la tensión');if(p)p.morale=clamp((p.morale||70)+2,20,100);waitStoryV110(story,rnd(18,40),label,'La reunión rebajó el conflicto, pero falta una señal deportiva.')}
+    else if(action==='pressure_firm'){rememberExternalV110('agents',aId,-5,'Rechazaste la presión sobre el futuro de su jugador');if(p){p.morale=clamp((p.morale||70)-3,20,100);if(p.morale<43)p.wantsOut=true}resolveStoryV110(story,label,'El pulso con el agente se endureció.')}
+    else if(action==='pressure_player'){rememberExternalV110('agents',aId,-2,'Apartaste al agente y hablaste directamente con el jugador');rememberPlayerV110(p,4,'Hablaste con él directamente durante un conflicto con su agente');if(p)p.morale=clamp((p.morale||70)+3,20,100);resolveStoryV110(story,label,'Protegiste el vínculo con el jugador, aunque el agente no lo olvidará.')}
+    else if(action==='pressure_role'){rememberExternalV110('agents',aId,2,'Aceptaste revisar el rol de su jugador');rememberPlayerV110(p,3,'Le aseguraste que revisarías su papel en el equipo');if(p)p.morale=clamp((p.morale||70)+4,20,100);resolveStoryV110(story,label,'El conflicto se enfría por ahora.')}
+    else if(action==='pressure_contract'){rememberExternalV110('agents',aId,3,'Abriste la puerta a revisar el contrato de su jugador');rememberPlayerV110(p,4,'Le hiciste saber que valorarías su continuidad');if(p)p.morale=clamp((p.morale||70)+5,20,100);resolveStoryV110(story,label,'Jugador y agente interpretan que cuentas con él.')}
+    else if(action==='pressure_none'){rememberExternalV110('agents',aId,-2,'La reunión terminó sin compromisos');if(p)p.morale=clamp((p.morale||70)-2,20,100);resolveStoryV110(story,label,'La tensión no desaparece del todo.')}
+
+    else if(action==='media_context'){rememberExternalV110('journalists',jId,4,'Respondiste con calma cuando rescató una vieja historia');S.reputation=clamp(S.reputation+.2,1,100);resolveStoryV110(story,label,'Conseguiste que la noticia no creciera demasiado.')}
+    else if(action==='media_attack'){rememberExternalV110('journalists',jId,-6,'Chocaste públicamente con el periodista');S.fans=clamp(S.fans+.3,0,100);S.reputation=clamp(S.reputation-.15,1,100);resolveStoryV110(story,label,'La historia se convirtió en un enfrentamiento con los medios.')}
+    else if(action==='media_ignore'){rememberExternalV110('journalists',jId,-1,'No respondiste a su artículo sobre tu pasado');resolveStoryV110(story,label,'La noticia siguió su ciclo sin tu participación.')}
+
+    else if(action==='rival_respect'){rememberExternalV110('managers',mId,3,'Mostraste respeto antes de vuestro reencuentro');const r=externalV110('managers',mId);if(r)r.rivalry=Math.max(0,(r.rivalry||0)-1);resolveStoryV110(story,label,'La rivalidad sigue, pero con respeto.')}
+    else if(action==='rival_fire'){rememberExternalV110('managers',mId,-3,'Calentaste la previa antes de volver a enfrentaros');const r=externalV110('managers',mId);if(r)r.rivalry=clamp((r.rivalry||0)+5,0,50);S.fans=clamp(S.fans+.4,0,100);resolveStoryV110(story,label,'El próximo duelo tendrá todavía más carga personal.')}
+    else if(action==='rival_ignore'){resolveStoryV110(story,label,'Te negaste a convertir el partido en un duelo personal.')}
+
+    else if(action==='oldclub_emotion'){S.reputation=clamp(S.reputation+.15,1,100);resolveStoryV110(story,label,'Reconociste públicamente el vínculo con tu antiguo club.')}
+    else if(action==='oldclub_focus'){S.board=clamp(S.board+.2,0,100);resolveStoryV110(story,label,'Intentaste convertir el regreso en una jornada normal.')}
+    else if(action==='oldclub_edge'){S.fans=clamp(S.fans+.3,0,100);resolveStoryV110(story,label,'Usaste tu pasado como combustible competitivo.')}
+
+    else if(action==='club_listen'){waitStoryV110(story,rnd(35,90),label,'Permitiste que el antiguo club mantuviera el contacto.')}
+    else if(action==='club_affection'){S.reputation=clamp(S.reputation+.2,1,100);resolveStoryV110(story,label,'Agradeciste el interés sin abrir una negociación.')}
+    else if(action==='club_close'){resolveStoryV110(story,label,'Cerraste la puerta a un regreso.')}
+    else if(action==='club_offer'){const ok=jobOfferV110(story.payload.club);resolveStoryV110(story,label,ok?'El club envió una oferta formal y ya aparece en Carrera.':'El contacto no pudo convertirse en una oferta formal.')}
+    else if(action==='club_stay'){S.board=clamp(S.board+.4,0,100);resolveStoryV110(story,label,'Elegiste centrarte en tu proyecto actual.')}
+    else if(action==='club_future'){resolveStoryV110(story,label,'La puerta queda abierta para otra temporada.')}
+    else resolveStoryV110(story,label,'La historia siguió su curso.');
+
+    addNews('Historia de carrera',storyViewHeadlineV110(story)+' · '+story.outcome,'historia');
+    save();
+  }
+
+  function storyViewHeadlineV110(story){
+    const view=storyViewV110(story);
+    return view?.title||'Una historia de tu carrera';
+  }
+
+  function openStoryV110(id){
+    ensureV7State();
+    const story=(S.storyEngine.threads||[]).find(x=>x.id===id)||activeStoryV110();
+    if(!story)return;
+    const view=storyViewV110(story);
+    els.matchBox.innerHTML=
+      '<div class="row"><h2>📖 Historia de carrera</h2><span class="spacer"></span><button class="btn ghost" id="closeStoryV110">Cerrar</button></div>'+
+      '<div class="story-box-v110">'+
+        '<div class="story-head-v110"><span class="story-icon-v110">'+view.icon+'</span><div><div class="story-kicker-v110">Capítulo '+(story.stage||1)+' · '+dateStr(story.activated||story.created)+'</div><h2 style="margin:3px 0 0">'+esc(view.title)+'</h2></div></div>'+
+        '<div class="story-origin-v110">'+esc(view.origin||'El mundo recuerda tus decisiones.')+'</div>'+
+        '<div class="story-body-v110">'+esc(view.body)+'</div>'+
+        (story.status==='active'?'<div class="story-actions-v110">'+view.choices.map((x,i)=>'<button class="btn '+(i===0?'primary':i===1?'ghost':'')+' storyChoiceV110" data-a="'+esc(x[0])+'" data-l="'+esc(x[1])+'"><strong>'+esc(x[1])+'</strong><small>'+esc(x[2])+'</small></button>').join('')+'</div>':
+          '<div class="muted">Este capítulo ya no requiere una decisión.</div>')+
+      '</div>';
+    els.matchModal.classList.remove('hidden');
+    $('#closeStoryV110').onclick=()=>els.matchModal.classList.add('hidden');
+    els.matchBox.querySelectorAll('.storyChoiceV110').forEach(b=>b.onclick=()=>{
+      const s=(S.storyEngine.threads||[]).find(x=>x.id===story.id);
+      if(!s||s.status!=='active')return;
+      applyStoryChoiceV110(s,b.dataset.a,b.dataset.l);
+      els.matchModal.classList.add('hidden');
+      render('home');
+    });
+  }
+  window.openStoryV110=openStoryV110;
+
+  function activateStoryV110(story,date,isFollowup=false){
+    story.status='active';story.activated=date;story.updated=date;story.nextAt=null;
+    const view=storyViewV110(story);
+    pushDayEventV7(date,{type:'story',text:'📖 '+view.title});
+    addNews(isFollowup?'Una historia vuelve':'Nueva historia de carrera',view.title+': '+view.body,'historia');
+  }
+
+  function processStoryEngineV110(date){
+    ensureV7State();
+    if(activeStoryV110())return;
+
+    const due=(S.storyEngine.threads||[]).filter(x=>x.status==='waiting'&&x.nextAt&&x.nextAt<=date).sort((a,b)=>a.nextAt.localeCompare(b.nextAt))[0];
+    if(due){
+      activateStoryV110(due,date,true);
+      return;
+    }
+
+    if(S.storyEngine.cooldownUntil&&date<S.storyEngine.cooldownUntil)return;
+    if((S.careerRecord?.p||S.record?.p||0)<3)return;
+    if(S.storyEngine.lastCheck&&dateDiff(S.storyEngine.lastCheck,date)<7)return;
+    S.storyEngine.lastCheck=date;
+
+    const candidates=buildCandidatesV110();
+    if(!candidates.length||Math.random()>.46)return;
+
+    const chosen=weightedStoryV110(candidates);
+    if(!chosen)return;
+    const story=makeStoryV110(chosen);
+    S.storyEngine.threads.unshift(story);
+    S.storyEngine.threads=S.storyEngine.threads.slice(0,60);
+    markUsedV110(chosen.key);
+    activateStoryV110(story,date,false);
+  }
+
+  const worldDayV110Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV110Base(date);
+    processStoryEngineV110(date);
+  };
+
+  const eventIconV110Base=eventIcon;
+  eventIcon=function(t){return t==='story'?'📖':eventIconV110Base(t)};
+  const eventStopsV110Base=eventStops;
+  eventStops=function(e){return e?.type==='story'?true:eventStopsV110Base(e)};
+
+  const renderHomeV110Base=renderHome;
+  renderHome=function(){
+    renderHomeV110Base();
+    const story=activeStoryV110();if(!story)return;
+    const view=storyViewV110(story);
+    let host=els.view.querySelector('.home-alerts-v109');
+    if(!host){
+      host=document.createElement('div');
+      host.className='home-alerts-v109';
+      const root=els.view.querySelector('.home-min-v109')||els.view;
+      root.appendChild(host);
+    }
+    const b=document.createElement('button');
+    b.className='home-alert-v109 story-alert-v110';
+    b.innerHTML='📖 '+esc(view.title);
+    b.onclick=()=>openStoryV110(story.id);
+    host.prepend(b);
+  };
+
+  const renderCareerV110Base=renderCareerV7;
+  renderCareerV7=function(){
+    renderCareerV110Base();
+    ensureV7State();
+    const threads=(S.storyEngine.threads||[]).slice().sort((a,b)=>(b.updated||b.created).localeCompare(a.updated||a.created)).slice(0,10);
+    const active=activeStoryV110();
+    const card=document.createElement('div');
+    card.className='card story-career-v110';
+    card.style.marginTop='10px';
+    card.innerHTML=
+      '<div class="row"><h3 style="margin:0">📖 Historias de tu carrera</h3><span class="spacer"></span><span class="badge">'+(S.storyEngine.threads||[]).length+' historias</span></div>'+
+      (active?'<div class="story-box-v110" style="margin-top:9px;padding:10px"><div class="row"><strong>'+esc(storyViewV110(active).title)+'</strong><span class="spacer"></span><button class="btn primary openStoryCareerV110" data-id="'+active.id+'">Decidir</button></div><div class="muted">'+esc(storyViewV110(active).origin)+'</div></div>':'')+
+      '<div style="margin-top:8px">'+(threads.length?threads.map(s=>{
+        const v=storyViewV110(s),st=s.status==='active'?'ACTIVA':s.status==='waiting'?'VOLVERÁ':'CERRADA';
+        return '<div class="story-thread-v110"><div class="row"><div><strong>'+v.icon+' '+esc(v.title)+'</strong><div class="story-chapter-v110">'+dateStr(s.created)+' · '+(s.chapters?.length||0)+' decisión'+((s.chapters?.length||0)===1?'':'es')+(s.status==='waiting'&&s.nextAt?' · próximo capítulo a partir de '+dateStr(s.nextAt):'')+'</div></div><span class="spacer"></span><span class="story-status-v110 '+s.status+'">'+st+'</span></div>'+(s.outcome?'<div class="muted" style="margin-top:4px">'+esc(s.outcome)+'</div>':'')+'</div>';
+      }).join(''):'<div class="empty">Tu pasado todavía no ha generado historias propias.</div>')+'</div>';
+    els.view.appendChild(card);
+    card.querySelectorAll('.openStoryCareerV110').forEach(b=>b.onclick=()=>openStoryV110(b.dataset.id));
+  };
+})();
+
 loadDB();
 })();
 </script>
