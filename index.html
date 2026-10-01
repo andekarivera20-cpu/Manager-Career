@@ -3762,7 +3762,7 @@ loadDB=async function(){
 
 
 // ===== CONTEXTUAL MATCH DECISIONS 10.7 =====
-// Gran bolsa de situaciones, pero solo 6-7 por partido (tope duro 10), sin repetir.
+// Gran bolsa de situaciones contextuales: no hay cuota fija y nunca más de 5 por partido.
 (function(){
   const style=document.createElement('style');
   style.textContent=
@@ -4093,46 +4093,77 @@ loadDB=async function(){
     ];
   }
 
-  function scheduleV107(){
-    const ranges=[[9,15],[18,25],[28,35],[38,43],[51,58],[61,68],[71,78],[81,87]];
-    const target=Math.random()<.58?7:6;
-    const shuffled=ranges.slice().sort(()=>Math.random()-.5).slice(0,target).sort((a,b)=>a[0]-b[0]);
-    return{target,minutes:shuffled.map(r=>rnd(r[0],r[1]))};
-  }
-
   function ensureMatchV107(M){
     if(!M||M.matchDecisionReadyV107)return;
-    const sc=scheduleV107();
     M.matchDecisionReadyV107=true;
-    M.matchDecisionTargetV107=sc.target;
-    M.matchDecisionMinutesV107=sc.minutes;
+    // Solo ~10% de partidos pueden llegar a una quinta decisión.
+    // En todos los demás el techo es 4, pero no existe un número obligatorio.
+    M.matchDecisionCapV107=Math.random()<.10?5:4;
     M.matchDecisionDoneV107=0;
     M.matchDecisionUsedV107=[];
     M.matchDecisionLogV107=[];
+    M.matchDecisionCheckedMinutesV107=[];
+    M.lastDecisionMinuteV107=-20;
     M.tacticalEdgeV107=0;
     M.edgeUntilV107=0;
   }
 
   function dueV107(M){
     ensureMatchV107(M);
-    if(M.done||M.pendingDecisionV107||(M.matchDecisionDoneV107||0)>=Math.min(10,M.matchDecisionTargetV107||7))return false;
-    return (M.matchDecisionMinutesV107||[]).some(x=>x<=M.minute&&!M.matchDecisionUsedMinutesV107?.includes(x));
+    if(!M||M.done||M.pendingDecisionV107)return false;
+    if((M.matchDecisionDoneV107||0)>=(M.matchDecisionCapV107||4))return false;
+    if(M.minute<9||M.minute>88||M.minute===45)return false;
+    if(M.minute-(M.lastDecisionMinuteV107??-20)<9)return false;
+    return true;
+  }
+
+  function decisionChanceV107(M,candidates){
+    const sc=scoreV107(M),urgent=candidates.filter(x=>x.urgent).length;
+    let chance=.015;
+    chance+=Math.min(.04,urgent*.011);
+    if(Math.abs(sc.us-sc.them)<=1)chance+=.006;
+    if((M.momentum||50)<=38||(M.momentum||50)>=62)chance+=.013;
+    if((M.myShots||0)+(M.oppShots||0)>=6)chance+=.008;
+    if(M.minute>=68&&sc.us!==sc.them)chance+=.018;
+    if(rivalryLevelV7(S.club,M.opp)>0)chance+=.008;
+    if(M.minute<18)chance-=.006;
+    if((M.matchDecisionDoneV107||0)>=3)chance-=.008;
+    // Si este es uno de los pocos partidos que pueden llegar a 5,
+    // el tramo final puede producir esa quinta situación, pero solo si hay contexto.
+    if((M.matchDecisionDoneV107||0)===4&&(M.matchDecisionCapV107||4)===5&&M.minute>=72)chance=Math.max(chance,.085);
+    return clamp(chance,.006,.13);
   }
 
   function createDecisionV107(M){
     ensureMatchV107(M);
     if(!dueV107(M))return false;
-    M.matchDecisionUsedMinutesV107=M.matchDecisionUsedMinutesV107||[];
-    const minute=(M.matchDecisionMinutesV107||[]).find(x=>x<=M.minute&&!M.matchDecisionUsedMinutesV107.includes(x));
-    if(minute==null)return false;
-    M.matchDecisionUsedMinutesV107.push(minute);
+
+    M.matchDecisionCheckedMinutesV107=M.matchDecisionCheckedMinutesV107||[];
+    if(M.matchDecisionCheckedMinutesV107.includes(M.minute))return false;
+    M.matchDecisionCheckedMinutesV107.push(M.minute);
+    if(M.matchDecisionCheckedMinutesV107.length>90)M.matchDecisionCheckedMinutesV107.shift();
+
     const used=new Set(M.matchDecisionUsedV107||[]);
     const candidates=poolV107(M).filter(t=>!used.has(t.id)&&t.ok());
-    const preferred=candidates.filter(t=>t.id!=='generic_focus'&&t.id!=='generic_width'&&t.id!=='generic_secondballs');
-    const tpl=pick(preferred.length?preferred:candidates);
+    const contextual=candidates.filter(t=>!['generic_focus','generic_width','generic_secondballs'].includes(t.id));
+
+    // Si no está pasando nada concreto, normalmente no interrumpimos el partido.
+    let available=contextual;
+    if(!available.length){
+      if(Math.random()>.12)return false;
+      available=candidates.filter(t=>['generic_focus','generic_width','generic_secondballs'].includes(t.id));
+    }
+    if(!available.length)return false;
+
+    if(Math.random()>decisionChanceV107(M,available))return false;
+
+    const urgent=available.filter(t=>t.urgent);
+    const tpl=urgent.length&&Math.random()<.64?pick(urgent):pick(available);
     if(!tpl)return false;
+
     M.pendingDecisionV107={tpl,shownAt:M.minute};
     M.matchDecisionUsedV107.push(tpl.id);
+    M.lastDecisionMinuteV107=M.minute;
     if(typeof window.stopAutoV95==='function')window.stopAutoV95(M);
     M.autoRunningV95=false;
     return true;
@@ -4185,13 +4216,10 @@ loadDB=async function(){
     M.autoRunningV95=false;
     if(M.minute===45&&target>45)M.secondHalfV95=true;
     let guard=0;
-    while(!M.done&&M.minute<target&&!M.pendingDecisionV107&&guard++<40){
-      const nextDue=(M.matchDecisionMinutesV107||[]).find(x=>x>M.minute&&!(M.matchDecisionUsedMinutesV107||[]).includes(x));
-      const stopAt=nextDue&&nextDue<=target?nextDue:target;
-      const jump=Math.min(5,Math.max(1,stopAt-M.minute));
+    // Avanza minuto a minuto para que una situación real pueda detener el salto.
+    while(!M.done&&M.minute<target&&!M.pendingDecisionV107&&guard++<100){
       if(typeof window.prepareMinuteV95==='function')window.prepareMinuteV95(M);
-      advanceMatch(M,jump);
-      if(M.pendingDecisionV107)break;
+      advanceMatch(M,1);
     }
     if(!M.done&&!M.pendingDecisionV107)renderMatch(M);
   }
@@ -4229,9 +4257,9 @@ loadDB=async function(){
     const box=document.createElement('div');
     box.className='match-decision-v107 '+(d.tpl.urgent?'urgent':'');
     box.innerHTML=
-      '<div class="decision-top-v107"><span class="decision-icon-v107">'+d.tpl.icon+'</span><div><strong>'+esc(d.tpl.title)+'</strong><div class="muted" style="margin-top:3px">'+esc(d.tpl.text())+'</div></div><span class="spacer"></span><span class="decision-count-v107">DECISIÓN '+((M.matchDecisionDoneV107||0)+1)+' / '+(M.matchDecisionTargetV107||7)+'</span></div>'+
+      '<div class="decision-top-v107"><span class="decision-icon-v107">'+d.tpl.icon+'</span><div><strong>'+esc(d.tpl.title)+'</strong><div class="muted" style="margin-top:3px">'+esc(d.tpl.text())+'</div></div><span class="spacer"></span><span class="decision-count-v107">DECISIÓN '+((M.matchDecisionDoneV107||0)+1)+'</span></div>'+
       '<div class="decision-actions-v107">'+d.tpl.choices.map((ch,i)=>'<button class="btn '+esc(ch.cls||'ghost')+' decisionChoiceV107" data-i="'+i+'"><strong>'+esc(ch.label)+'</strong><small>'+esc(ch.hint)+'</small></button>').join('')+'</div>'+
-      '<div class="decision-log-v107">El reloj está pausado. En este partido saldrán '+(M.matchDecisionTargetV107||7)+' situaciones y nunca más de 10.</div>';
+      '<div class="decision-log-v107">El reloj está pausado. Solo aparecen situaciones si el partido las genera · máximo 5.</div>';
 
     const flow=els.matchBox.querySelector('.flow-card-v95');
     if(flow)flow.insertAdjacentElement('beforebegin',box);
