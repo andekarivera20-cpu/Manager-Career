@@ -5317,8 +5317,10 @@ loadDB=async function(){
         rating=6.2+(myGoals>oppGoals?.45:myGoals===oppGoals?.05:-.35)+(Math.random()*.6-.2);
       }
 
-      const dg=(p.goals||0)-b.goals,da=(p.assists||0)-b.assists,dc=(p.cleanSheets||0)-b.cleanSheets;
-      rating+=dg*.5+da*.28+dc*.18;
+      const goalCount=(M.events||[]).filter(e=>String(e.text||'').includes('¡GOL! '+p.name)).length;
+      const assistCount=(M.events||[]).filter(e=>String(e.text||'').includes('asistencia de '+p.name)).length;
+      const dc=(p.cleanSheets||0)-b.cleanSheets;
+      rating+=goalCount*.5+assistCount*.28+dc*.18;
       rating=clamp(rating,4.5,9.8);
 
       p.recentRatingsV111=p.recentRatingsV111||[];
