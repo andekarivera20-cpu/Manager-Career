@@ -517,7 +517,7 @@ function rankLeagueV7(lid){const clubs=getLeagueClubs(lid);if(lid===S.leagueId&&
 function applyPromotionRelegationV7(){const countries=[...new Set(Object.values(EURO_LEAGUES).map(x=>x.country))];let newUserLeague=S.leagueId;for(const country of countries){const ids=Object.keys(EURO_LEAGUES).filter(id=>EURO_LEAGUES[id].country===country),top=ids.find(id=>EURO_LEAGUES[id].tier===1),sec=ids.find(id=>EURO_LEAGUES[id].tier===2);if(!top||!sec||!getLeagueClubs(top).length||!getLeagueClubs(sec).length)continue;const topRank=rankLeagueV7(top),secRank=rankLeagueV7(sec),n=Math.min(3,topRank.length-10,secRank.length-10);if(n<1)continue;const relegated=topRank.slice(-n),promoted=secRank.slice(0,n),topNew=getLeagueClubs(top).filter(c=>!relegated.includes(c)).concat(promoted),secNew=getLeagueClubs(sec).filter(c=>!promoted.includes(c)).concat(relegated);S.dynamicLeagues[top]=topNew;S.dynamicLeagues[sec]=secNew;for(const c of promoted){for(const p of S.players.filter(x=>x.club===c)){p.leagueId=top;p.leagueName=EURO_LEAGUES[top].name}if(c===S.club)newUserLeague=top}for(const c of relegated){for(const p of S.players.filter(x=>x.club===c)){p.leagueId=sec;p.leagueName=EURO_LEAGUES[sec].name}if(c===S.club)newUserLeague=sec}if(promoted.length||relegated.length)S.leagueChanges.unshift({season:S.season,text:`${country}: suben ${promoted.join(', ')} · bajan ${relegated.join(', ')}`})}return newUserLeague}
 function processRetirementsRegensV7(newDate){const retired=[];for(const p of S.players){if(p.club==='Retirado')continue;const chance=p.age>=38?.8:p.age>=36?.45:p.age>=34?.12:0;if(chance&&Math.random()<chance){const old=p.club;p.club='Retirado';retired.push({p,old})}}for(const {p,old} of retired){const regen={...p,id:'R'+Date.now()+Math.random().toString(36).slice(2,7),name:`${pick(YOUTH_FIRST)} ${pick(YOUTH_LAST)}`,full:'',age:rnd(16,18),overall:clamp(rnd(50,64),45,70),potential:clamp(Math.max(72,p.overall+rnd(-5,5)),70,94),value:rnd(200000,2500000),wage:rnd(500,3500),club:old==='Retirado'?'Agente libre':old,fitness:100,morale:70,goals:0,assists:0,cards:0,injuredUntil:null,suspension:0,contractUntil:`${+newDate.slice(0,4)+3}-06-30`,hierarchy:'Promesa',personality:pick(V7_PERSONALITIES),appearances:0,starts:0,minutes:0,ratingSum:0,avgRating:0,cleanSheets:0,individualFocus:'General',individualProgress:0,wantsOut:false,parentClub:null,loanUntil:null,releaseClause:0};S.players.push(regen)}const notable=retired.filter(x=>x.p.overall>=80).slice(0,5);for(const x of notable)addNews('Retirada',`${x.p.name} anuncia su retirada. Aparece una nueva generación de talentos.`,'carrera')}
 function returnLoansSeasonV7(){for(const p of S.players.filter(x=>x.parentClub)){const old=p.club;p.club=p.parentClub;p.parentClub=null;p.loanUntil=null;p.optionToBuy=0;if(old===S.club){S.lineup=S.lineup.filter(id=>id!==p.id);S.bench=S.bench.filter(id=>id!==p.id)}}}
-function seasonEnd(){ensureV7State();const rank=position(),rows=Object.values(S.standings).length,target=S.objective?.target||Math.ceil(rows/2),oldClub=S.club,oldLeague=S.leagueId;simulateAwards(rank);S.lastLeagueRank=rank;evaluatePromisesV7(S.date,true);S.history.push({club:S.club,season:S.season,note:`Finalizó ${rank}º en liga · objetivo: ${S.objective?.label||'—'}.`});S.board=clamp(S.board+(rank<=target?14:-12),0,100);S.fans=clamp(S.fans+(rank<=target?8:-8),0,100);S.reputation=clamp(S.reputation+(rows-rank)*.35+(rank<=target?3:-2),1,100);if(rank===1){S.record.trophies++;S.careerRecord.trophies++;unlockAchievementV7('champion')}const movedLeague=applyPromotionRelegationV7();if(movedLeague!==oldLeague){if(EURO_LEAGUES[oldLeague]?.tier===2&&EURO_LEAGUES[movedLeague]?.tier===1)unlockAchievementV7('promotion');addNews('Cambio de categoría',movedLeague&&EURO_LEAGUES[movedLeague]?.tier===1?`${S.club} logra el ascenso a ${EURO_LEAGUES[movedLeague].name}.`:`${S.club} desciende a ${EURO_LEAGUES[movedLeague]?.name||'segunda división'}.`,'liga')}S.europeCompetition=EURO_LEAGUES[oldLeague]?.tier===1?(rank<=4?'Champions League':rank<=6?'Europa League':rank<=7?'Conference League':null):null;const y=+S.season.slice(0,4)+1,newDate=`${y}-07-01`;returnLoansSeasonV7();const expired=S.players.filter(p=>p.club!=='Retirado'&&p.contractUntil&&p.contractUntil<newDate);for(const p of expired){if(p.club===S.club)addNews('Salida libre',`${p.name} abandona el club al terminar contrato.`,'contrato');p.club='Agente libre'}for(const p of S.players){p.age++;if(p.age<24&&p.overall<p.potential&&Math.random()<.45)p.overall++;if(p.age>31&&Math.random()<.32)p.overall=Math.max(45,p.overall-1);p.fitness=100;p.forcedAvailable=false}processRetirementsRegensV7(newDate);S.season=`${y}/${String(y+1).slice(2)}`;S.seasonCount=(S.seasonCount||1)+1;S.date=newDate;S.budget+=Math.max(2e6,(rows-rank+1)*1.2e6);S.leagueId=movedLeague||oldLeague;S.country=EURO_LEAGUES[S.leagueId]?.country||S.country;S.board=clamp(S.board,20,100);S.record={p:0,w:0,d:0,l:0,gf:0,ga:0,trophies:S.record.trophies};S.standings={};getLeagueClubs(S.leagueId).forEach(c=>S.standings[c]={club:c,p:0,w:0,d:0,l:0,gf:0,ga:0,gd:0,pts:0,rating:clubRating(c)});S.objective=computeObjective(oldClub,S.leagueId);S.academyScoutedSeason=null;S.pressUsedKey=null;S.pendingPress=null;S.dayEvents={};S.dayGeneratedDates={};S.pendingBids=[];S.scoutingAssignment=null;autoLineup();generateLeagueSchedule(getLeagueClubs(S.leagueId));generateExtraSchedule();S.trainingUsedDate=null;generateDailyEvents(S.date);S.inbox.push({date:S.date,text:`Nueva temporada ${S.season}. Empieza la pretemporada.`});addNews(`Comienza ${S.season}`,`${S.club} vuelve al trabajo. El mercado y la pretemporada ya están en marcha.`,'club');checkAchievementsV7();save();render('home')}
+function seasonEnd(){ensureV7State();const rank=position(),rows=Object.values(S.standings).length,target=S.objective?.target||Math.ceil(rows/2),oldClub=S.club,oldLeague=S.leagueId;simulateAwards(rank);S.lastLeagueRank=rank;evaluatePromisesV7(S.date,true);S.history.push({club:S.club,season:S.season,note:`Finalizó ${rank}º en liga · objetivo: ${S.objective?.label||'—'}.`});S.board=clamp(S.board+(rank<=target?14:-12),0,100);S.fans=clamp(S.fans+(rank<=target?8:-8),0,100);S.reputation=clamp(S.reputation+(rows-rank)*.35+(rank<=target?3:-2),1,100);if(rank===1){S.record.trophies++;S.careerRecord.trophies++;unlockAchievementV7('champion')}const movedLeague=applyPromotionRelegationV7();if(movedLeague!==oldLeague){if(EURO_LEAGUES[oldLeague]?.tier===2&&EURO_LEAGUES[movedLeague]?.tier===1)unlockAchievementV7('promotion');addNews('Cambio de categoría',movedLeague&&EURO_LEAGUES[movedLeague]?.tier===1?`${S.club} logra el ascenso a ${EURO_LEAGUES[movedLeague].name}.`:`${S.club} desciende a ${EURO_LEAGUES[movedLeague]?.name||'segunda división'}.`,'liga')}S.europeCompetition=EURO_LEAGUES[oldLeague]?.tier===1?(rank<=4?'Champions League':rank<=6?'Europa League':rank<=7?'Conference League':null):null;const y=+S.season.slice(0,4)+1,newDate=`${y}-07-01`;returnLoansSeasonV7();const expired=S.players.filter(p=>p.club!=='Retirado'&&p.contractUntil&&p.contractUntil<newDate);for(const p of expired){if(p.club===S.club)addNews('Salida libre',`${p.name} abandona el club al terminar contrato.`,'contrato');p.club='Agente libre'}window.applySeasonDevelopmentV119?.(newDate)processRetirementsRegensV7(newDate);S.season=`${y}/${String(y+1).slice(2)}`;S.seasonCount=(S.seasonCount||1)+1;S.date=newDate;S.budget+=Math.max(2e6,(rows-rank+1)*1.2e6);S.leagueId=movedLeague||oldLeague;S.country=EURO_LEAGUES[S.leagueId]?.country||S.country;S.board=clamp(S.board,20,100);S.record={p:0,w:0,d:0,l:0,gf:0,ga:0,trophies:S.record.trophies};S.standings={};getLeagueClubs(S.leagueId).forEach(c=>S.standings[c]={club:c,p:0,w:0,d:0,l:0,gf:0,ga:0,gd:0,pts:0,rating:clubRating(c)});S.objective=computeObjective(oldClub,S.leagueId);S.academyScoutedSeason=null;S.pressUsedKey=null;S.pendingPress=null;S.dayEvents={};S.dayGeneratedDates={};S.pendingBids=[];S.scoutingAssignment=null;autoLineup();generateLeagueSchedule(getLeagueClubs(S.leagueId));generateExtraSchedule();S.trainingUsedDate=null;generateDailyEvents(S.date);S.inbox.push({date:S.date,text:`Nueva temporada ${S.season}. Empieza la pretemporada.`});addNews(`Comienza ${S.season}`,`${S.club} vuelve al trabajo. El mercado y la pretemporada ya están en marcha.`,'club');checkAchievementsV7();save();render('home')}
 
 
 // ===== V8 PATCH: improved match engine + shirt tactics UI =====
@@ -7597,6 +7597,419 @@ loadDB=async function(){
         (moves.length?moves.map(m=>'<div class="club-ai-move-v118"><div><strong>'+esc(m.buyer)+'</strong><div class="muted">'+esc(m.player)+' · '+esc(m.reason||'Movimiento de plantilla')+'</div></div><span>'+euro(m.fee||0)+'</span></div>').join(''):'<div class="empty">Los clubes todavía están analizando sus plantillas.</div>')+
       '</div>';
     els.view.appendChild(card);
+  };
+})();
+
+
+// ===== PLAYER DEVELOPMENT 2.0 10.19 =====
+// Desarrollo por minutos, rendimiento, entrenamiento, edad, potencial, lesiones, staff y contexto de club.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.dev-summary-v119{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:8px 0 10px}'+
+    '.dev-summary-card-v119{padding:9px;border:1px solid var(--line);border-radius:10px;background:#09150f}.dev-summary-card-v119 small{display:block;color:var(--muted);font-size:9px}.dev-summary-card-v119 strong{font-size:17px}'+
+    '.dev2-list-v119{display:grid;gap:6px}.dev2-row-v119{display:grid;grid-template-columns:minmax(210px,1.4fr) minmax(130px,.7fr) minmax(125px,.65fr);gap:9px;align-items:center;padding:9px;border:1px solid var(--line);border-radius:11px;background:#09150f}'+
+    '.dev2-main-v119{min-width:0}.dev2-name-v119{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.dev2-meta-v119{font-size:10px;color:var(--muted);margin-top:3px}'+
+    '.dev-trend-v119{font-size:9px;font-weight:900;padding:3px 6px;border:1px solid var(--line);border-radius:999px}.dev-trend-v119.hot{color:#ffd776;border-color:#755f29}.dev-trend-v119.good{color:#8ee8a8;border-color:#315f42}.dev-trend-v119.warn{color:#ffd08a;border-color:#72542d}.dev-trend-v119.bad{color:#ff9d9d;border-color:#733939}.dev-trend-v119.neutral{color:#c6d0ca}'+
+    '.dev-xp-v119{height:7px;border-radius:99px;background:#17251e;overflow:hidden;margin-top:6px}.dev-xp-v119 i{display:block;height:100%;background:var(--accent);border-radius:99px}.dev2-reason-v119{font-size:9px;color:#aebeb4;margin-top:4px}'+
+    '.dev-gain-v119{font-size:13px;font-weight:950}.dev-gain-v119.up{color:#8ee8a8}.dev-gain-v119.down{color:#ff9d9d}.dev-gain-v119.flat{color:#c7d0ca}'+
+    '.dev-history-v119{font-size:9px;color:var(--muted);margin-top:3px}'+
+    '@media(max-width:760px){.dev-summary-v119{grid-template-columns:1fr 1fr}.dev2-row-v119{grid-template-columns:1fr auto}.dev2-row-v119>.dev2-focus-v119{grid-column:1/-1}.dev2-row-v119 select{width:100%}}';
+  document.head.appendChild(style);
+
+  const PERSONALITY_FACTOR_V119={
+    'Profesional':1.14,'Ambicioso':1.12,'Competitivo':1.06,'Líder de grupo':1.04,
+    'Leal':1.01,'Tranquilo':.96,'Volátil':.90
+  };
+
+  function devStateV119(){
+    S.developmentV119=S.developmentV119||{season:S.season,lastAIWeek:null,lastInjuryDay:null,history:[]};
+    S.developmentV119.history=S.developmentV119.history||[];
+    return S.developmentV119;
+  }
+  function initPlayerV119(p){
+    if(!p)return;
+    p.devXPV119=Number.isFinite(p.devXPV119)?p.devXPV119:0;
+    p.devSeasonStartV119=Number.isFinite(p.devSeasonStartV119)?p.devSeasonStartV119:p.overall;
+    p.devSeasonGainV119=Number.isFinite(p.devSeasonGainV119)?p.devSeasonGainV119:0;
+    p.devMinutesV119=Number.isFinite(p.devMinutesV119)?p.devMinutesV119:0;
+    p.devMatchesV119=Number.isFinite(p.devMatchesV119)?p.devMatchesV119:0;
+    p.devRatingSumV119=Number.isFinite(p.devRatingSumV119)?p.devRatingSumV119:0;
+    p.devInjuryDaysV119=Number.isFinite(p.devInjuryDaysV119)?p.devInjuryDaysV119:0;
+    p.devTrainingDaysV119=Number.isFinite(p.devTrainingDaysV119)?p.devTrainingDaysV119:0;
+    p.focusProgressV119=Number.isFinite(p.focusProgressV119)?p.focusProgressV119:0;
+    p.devHistoryV119=Array.isArray(p.devHistoryV119)?p.devHistoryV119:[];
+    p.individualFocus=p.individualFocus||'General';
+    syncProgressV119(p);
+  }
+  function ageFactorV119(age){
+    if(age<=18)return 1.5;
+    if(age<=20)return 1.34;
+    if(age<=22)return 1.2;
+    if(age<=24)return 1.03;
+    if(age<=27)return .78;
+    if(age<=29)return .52;
+    if(age<=31)return .28;
+    return .10;
+  }
+  function potentialFactorV119(p){
+    const gap=Math.max(0,(p.potential||p.overall)-(p.overall||0));
+    if(gap<=0)return 0;
+    return clamp(.38+gap/12,.38,1.35);
+  }
+  function formFactorV119(p){
+    const avg=typeof window.formInfoV111==='function'?window.formInfoV111(p)?.avg:null;
+    if(avg==null)return 1;
+    return clamp(.88+(avg-5.8)*.12,.84,1.18);
+  }
+  function environmentFactorV119(p){
+    if(p.club===S.club){
+      const staff=typeof staffEffectV7==='function'?staffEffectV7('youth'):1;
+      const rep=Number(S.reputation||45);
+      return clamp(.88+staff*.055+rep/900,.92,1.28);
+    }
+    const pf=window.clubBoardProfileV117?.(p.club)||{youth:3};
+    let coach=65;
+    try{coach=managerProfileV7(p.club)?.prestige||clubRatingDB(p.club)}catch(e){}
+    return clamp(.88+pf.youth*.045+coach/1200,.9,1.25);
+  }
+  function personalityFactorV119(p){return PERSONALITY_FACTOR_V119[p.personality]||1}
+  function moraleFactorV119(p){return clamp(.88+((p.morale||70)-50)/250,.84,1.12)}
+  function devNeedV119(p){
+    let need=112+Math.max(0,(p.overall||60)-68)*2.2+Math.max(0,(p.overall||60)-82)*3.8;
+    if(p.age<=20)need-=10;
+    if((p.potential||p.overall)-(p.overall||0)>=12)need-=7;
+    return Math.max(85,Math.round(need));
+  }
+  function syncProgressV119(p){
+    const need=devNeedV119(p);
+    p.individualProgress=Math.round(clamp((p.devXPV119||0)/Math.max(1,need)*100,0,100));
+  }
+  function revalueV119(p,delta,potentialDelta=0){
+    if(!p||!Number.isFinite(p.value))return;
+    let mult=1;
+    if(delta>0)mult*=1+delta*(p.age<=23?.12:.085);
+    if(delta<0)mult*=Math.max(.65,1-Math.abs(delta)*.09);
+    if(potentialDelta>0)mult*=1+potentialDelta*.035;
+    if(potentialDelta<0)mult*=Math.max(.8,1+potentialDelta*.025);
+    p.value=Math.max(50000,Math.round(p.value*mult/50000)*50000);
+  }
+  function growthReasonV119(p,source){
+    if(source==='match')return'Los minutos y el rendimiento aceleran su crecimiento';
+    if(source==='training')return'El trabajo semanal está dando resultado';
+    if(source==='ai')return'Está progresando dentro de su club';
+    return'Su desarrollo alcanza un nuevo nivel';
+  }
+  function recordGrowthV119(p,delta,source){
+    p.devSeasonGainV119=(p.devSeasonGainV119||0)+delta;
+    p.devHistoryV119=p.devHistoryV119||[];
+    p.devHistoryV119.unshift({date:S.date,delta,overall:p.overall,source});
+    p.devHistoryV119=p.devHistoryV119.slice(0,12);
+    const st=devStateV119();
+    st.history.unshift({date:S.date,playerId:p.id,player:p.name,club:p.club,delta,overall:p.overall,source});
+    st.history=st.history.slice(0,120);
+    if(p.club===S.club&&delta>0){
+      const canNews=!p.devLastNewsV119||dateDiff(p.devLastNewsV119,S.date)>=35;
+      if(canNews&&(p.age<=23||p.overall>=78||p.devSeasonGainV119>=2)){
+        addNews('Evolución de jugador',p.name+' sube a '+p.overall+' OVR. '+growthReasonV119(p,source)+'.','entrenamiento');
+        p.devLastNewsV119=S.date;
+      }
+    }
+  }
+  function tryLevelV119(p,source){
+    initPlayerV119(p);
+    let levels=0;
+    while(p.devXPV119>=devNeedV119(p)&&p.overall<p.potential&&levels<2){
+      p.devXPV119-=devNeedV119(p);
+      p.overall++;
+      levels++;
+      revalueV119(p,1,0);
+      recordGrowthV119(p,1,source);
+    }
+    if(p.overall>=p.potential)p.devXPV119=Math.min(p.devXPV119,devNeedV119(p)*.35);
+    syncProgressV119(p);
+    return levels;
+  }
+  function addDevXPV119(p,raw,source){
+    initPlayerV119(p);
+    if(p.club==='Retirado'||p.overall>=p.potential)return 0;
+    let mult=ageFactorV119(p.age)*potentialFactorV119(p)*personalityFactorV119(p)*moraleFactorV119(p)*formFactorV119(p)*environmentFactorV119(p);
+    if(p.injuredUntil&&p.injuredUntil>S.date)mult*=.20;
+    const amount=Math.max(0,raw*mult);
+    p.devXPV119+=amount;
+    tryLevelV119(p,source);
+    syncProgressV119(p);
+    return amount;
+  }
+
+  function adjacentPositionV119(p){
+    const have=String(p.positions||'').split(',').map(x=>x.trim()).filter(Boolean);
+    const map={
+      GK:[],CB:['CDM','RB','LB'],LB:['LWB','CB','LM'],RB:['RWB','CB','RM'],
+      LWB:['LB','LM','LW'],RWB:['RB','RM','RW'],CDM:['CM','CB'],CM:['CDM','CAM'],
+      CAM:['CM','LW','RW'],LM:['LW','CM'],RM:['RW','CM'],LW:['RW','CAM','ST'],
+      RW:['LW','CAM','ST'],ST:['CF','LW','RW'],CF:['ST','CAM']
+    };
+    const opts=[...new Set(have.flatMap(x=>map[x]||[]))].filter(x=>!have.includes(x));
+    if(!opts.length)return null;
+    return opts[hashV7(String(p.id)+'|'+String(p.focusProgressV119))%opts.length];
+  }
+  function focusTrainingV119(p,base){
+    p.focusProgressV119=(p.focusProgressV119||0)+base;
+    if(p.individualFocus==='Nueva posición'&&p.focusProgressV119>=100){
+      const pos=adjacentPositionV119(p);
+      if(pos){
+        p.positions=(p.positions?String(p.positions)+', ':'')+pos;
+        if(p.club===S.club)addNews('Nueva posición',p.name+' completa su adaptación y ya puede jugar como '+pos+'.','entrenamiento');
+      }
+      p.focusProgressV119=0;
+    }else if(p.focusProgressV119>=100){
+      p.focusProgressV119%=100;
+    }
+  }
+
+  // Sustituye el antiguo ciclo aleatorio de entrenamiento.
+  individualTrainingDayV7=function(date){
+    if(!isScheduledTrainingDay(date))return;
+    for(const p of getClubPlayers(S.club)){
+      initPlayerV119(p);
+      if(p.injuredUntil&&p.injuredUntil>date){
+        p.devInjuryDaysV119++;
+        continue;
+      }
+      p.devTrainingDaysV119++;
+      const focus=p.individualFocus||'General';
+      const focusBoost=focus==='General'?1:focus==='Nueva posición'?.75:1.10;
+      const raw=.72*focusBoost;
+      addDevXPV119(p,raw,'training');
+      focusTrainingV119(p,focus==='Nueva posición'?2.3:1.55);
+    }
+  };
+
+  function matchDevelopmentV119(M){
+    if(!M||M.devAppliedV119)return;
+    M.devAppliedV119=true;
+    const rows=M.postSummaryV114?.rows||[];
+    for(const r of rows){
+      const p=S.players.find(x=>String(x.id)===String(r.id));
+      if(!p)continue;
+      initPlayerV119(p);
+      const mins=Math.max(0,r.minutes||0),rating=Number(r.rating||6);
+      p.devMinutesV119+=mins;
+      p.devMatchesV119++;
+      p.devRatingSumV119+=rating;
+      let raw=(mins/90)*(1.15+Math.max(0,rating-6)*.72);
+      if(rating>=8)raw+=.55;
+      if(rating<=5.5)raw*=.82;
+      if(p.age<=21&&mins>=60)raw+=.35;
+      addDevXPV119(p,raw,'match');
+    }
+  }
+
+  const postMatchV119Base=postMatchV7;
+  postMatchV7=function(M,myGoals,oppGoals,f){
+    postMatchV119Base(M,myGoals,oppGoals,f);
+    if(f.comp!=='Pretemporada')matchDevelopmentV119(M);
+  };
+
+  function aiWeeklyDevelopmentV119(date){
+    const st=devStateV119();
+    const d=new Date(date+'T12:00:00Z');
+    if(d.getUTCDay()!==1||st.lastAIWeek===date)return;
+    st.lastAIWeek=date;
+
+    const clubs=new Map();
+    for(const p of S.players||[]){
+      if(!p.club||p.club===S.club||p.club==='Agente libre'||p.club==='Retirado'||p.parentClub)continue;
+      if(!clubs.has(p.club))clubs.set(p.club,[]);
+      clubs.get(p.club).push(p);
+    }
+
+    for(const [club,ps] of clubs){
+      const sorted=ps.slice().sort((a,b)=>b.overall-a.overall);
+      const top11=new Set(sorted.slice(0,11).map(p=>String(p.id)));
+      const rotation=new Set(sorted.slice(11,18).map(p=>String(p.id)));
+      const pf=window.clubBoardProfileV117?.(club)||{youth:3};
+      for(const p of ps){
+        initPlayerV119(p);
+        if(p.age>31||p.overall>=p.potential)continue;
+        let virtual=top11.has(String(p.id))?78:rotation.has(String(p.id))?34:10;
+        if(p.age<=21&&pf.youth>=4)virtual+=15;
+        if(p.age<=20&&pf.youth>=5)virtual+=8;
+        p.devMinutesV119+=virtual;
+        p.devMatchesV119+=virtual>=25?1:0;
+        const quality=top11.has(String(p.id))?6.7:6.3;
+        p.devRatingSumV119+=virtual>=25?quality:0;
+        let raw=(virtual/90)*1.15+.35;
+        addDevXPV119(p,raw,'ai');
+      }
+    }
+  }
+
+  function trackInjuryDaysV119(date){
+    const st=devStateV119();
+    if(st.lastInjuryDay===date)return;
+    st.lastInjuryDay=date;
+    for(const p of S.players||[]){
+      initPlayerV119(p);
+      if(p.injuredUntil&&p.injuredUntil>=date)p.devInjuryDaysV119++;
+    }
+  }
+
+  const worldDayV119Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV119Base(date);
+    ensureV7State();
+    trackInjuryDaysV119(date);
+    aiWeeklyDevelopmentV119(date);
+  };
+
+  function seasonRatingV119(p){
+    return p.devMatchesV119?((p.devRatingSumV119||0)/Math.max(1,p.devMatchesV119)):null;
+  }
+  function seasonReviewV119(p){
+    initPlayerV119(p);
+    const age=p.age,mins=p.devMinutesV119||0,inj=p.devInjuryDaysV119||0,avg=seasonRatingV119(p);
+    let decline=0,potDelta=0;
+
+    if(age>=31){
+      let pressure=(age-30)*.34;
+      if(mins<900)pressure+=.48;
+      if(mins<350)pressure+=.35;
+      if(inj>=45)pressure+=.32;
+      if(inj>=90)pressure+=.30;
+      if(avg!=null&&avg>=7.0)pressure-=.32;
+      if(mins>=2200)pressure-=.22;
+      decline=clamp(Math.floor(Math.max(0,pressure)/1.18),0,age>=36?3:2);
+    }
+
+    if(age<=21&&mins>=1450&&avg!=null&&avg>=7.0&&p.potential<95){
+      potDelta=1;
+    }else if(age>=22&&age<=25&&mins<450&&(p.potential-p.overall)>=6){
+      potDelta=-1;
+    }
+
+    if(decline){
+      p.overall=Math.max(45,p.overall-decline);
+      revalueV119(p,-decline,0);
+      recordGrowthV119(p,-decline,'age');
+    }
+    if(potDelta){
+      p.potential=clamp(p.potential+potDelta,Math.max(p.overall,50),95);
+      revalueV119(p,0,potDelta);
+      p.devHistoryV119.unshift({date:S.date,delta:0,potentialDelta:potDelta,overall:p.overall,source:'potential'});
+      p.devHistoryV119=p.devHistoryV119.slice(0,12);
+      if(p.club===S.club){
+        addNews(
+          potDelta>0?'Potencial al alza':'Desarrollo estancado',
+          potDelta>0?p.name+' está superando expectativas y su techo estimado aumenta.':p.name+' ha perdido parte de su proyección tras una temporada con pocos minutos.',
+          'entrenamiento'
+        );
+      }
+    }
+
+    p.age++;
+    p.fitness=100;
+    p.forcedAvailable=false;
+    p.devSeasonStartV119=p.overall;
+    p.devSeasonGainV119=0;
+    p.devMinutesV119=0;
+    p.devMatchesV119=0;
+    p.devRatingSumV119=0;
+    p.devInjuryDaysV119=0;
+    p.devTrainingDaysV119=0;
+    syncProgressV119(p);
+  }
+
+  window.applySeasonDevelopmentV119=function(newDate){
+    ensureV7State();
+    for(const p of S.players||[]){
+      if(p.club==='Retirado')continue;
+      seasonReviewV119(p);
+    }
+    const st=devStateV119();
+    st.season=S.season;
+    st.lastAIWeek=null;
+    st.lastInjuryDay=null;
+  };
+
+  const ensureV119Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV119Base();
+    if(!S)return;
+    devStateV119();
+    for(const p of S.players||[])initPlayerV119(p);
+  };
+
+  function trendV119(p){
+    initPlayerV119(p);
+    const gain=p.devSeasonGainV119||0,mins=p.devMinutesV119||0,inj=p.devInjuryDaysV119||0;
+    if(gain>=2)return{label:'Explosión',cls:'hot',icon:'🚀'};
+    if(gain>=1)return{label:'Progresando',cls:'good',icon:'↗'};
+    if(p.overall>=p.potential)return{label:'En su techo',cls:'neutral',icon:'⛰️'};
+    if(p.age>=32)return{label:'Veterano',cls:'warn',icon:'⏳'};
+    if(inj>=35)return{label:'Frenado por lesiones',cls:'bad',icon:'🩺'};
+    if(p.age<=24&&mins<350&&(S.record?.p||0)>=8)return{label:'Necesita minutos',cls:'warn',icon:'⏱️'};
+    if((p.individualProgress||0)>=65)return{label:'Cerca de mejorar',cls:'good',icon:'📈'};
+    return{label:'Desarrollo estable',cls:'neutral',icon:'→'};
+  }
+  function reasonV119(p){
+    const bits=[];
+    bits.push(Math.round(p.devMinutesV119||0)+' min');
+    const avg=seasonRatingV119(p);if(avg!=null)bits.push('nota '+avg.toFixed(1));
+    if(p.devTrainingDaysV119)bits.push(p.devTrainingDaysV119+' entren.');
+    if(p.devInjuryDaysV119)bits.push(p.devInjuryDaysV119+' d. lesión');
+    return bits.join(' · ');
+  }
+  function devGainHTMLV119(p){
+    const g=p.devSeasonGainV119||0;
+    if(g>0)return'<span class="dev-gain-v119 up">+'+g+' OVR</span>';
+    if(g<0)return'<span class="dev-gain-v119 down">'+g+' OVR</span>';
+    return'<span class="dev-gain-v119 flat">0 OVR</span>';
+  }
+
+  renderDevelopmentV7=function(){
+    ensureV7State();
+    const ps=getClubPlayers(S.club).sort((a,b)=>{
+      const ta=trendV119(a),tb=trendV119(b);
+      return (b.devSeasonGainV119||0)-(a.devSeasonGainV119||0)||b.individualProgress-a.individualProgress||a.age-b.age;
+    });
+    const growing=ps.filter(p=>(p.devSeasonGainV119||0)>0).length;
+    const near=ps.filter(p=>p.overall<p.potential&&(p.individualProgress||0)>=65).length;
+    const needs=ps.filter(p=>trendV119(p).label==='Necesita minutos').length;
+    const injured=ps.filter(p=>(p.devInjuryDaysV119||0)>=20).length;
+
+    els.view.innerHTML=
+      '<div class="row"><div><h2 style="margin:0">Desarrollo individual</h2><div class="muted">El crecimiento depende de jugar, rendir, entrenar y mantenerse sano.</div></div><span class="spacer"></span><span class="badge">Staff jóvenes '+staffEffectV7('youth')+'/5</span></div>'+
+      '<div class="dev-summary-v119">'+
+        '<div class="dev-summary-card-v119"><small>HAN MEJORADO</small><strong>'+growing+'</strong></div>'+
+        '<div class="dev-summary-card-v119"><small>CERCA DE SUBIR</small><strong>'+near+'</strong></div>'+
+        '<div class="dev-summary-card-v119"><small>NECESITAN MINUTOS</small><strong>'+needs+'</strong></div>'+
+        '<div class="dev-summary-card-v119"><small>FRENADOS POR LESIÓN</small><strong>'+injured+'</strong></div>'+
+      '</div>'+
+      '<div class="card"><div class="dev2-list-v119">'+ps.map(p=>{
+        const t=trendV119(p),pct=Math.round(p.individualProgress||0);
+        const last=(p.devHistoryV119||[])[0];
+        return '<div class="dev2-row-v119">'+
+          '<div class="dev2-main-v119"><div class="dev2-name-v119"><strong>'+esc(p.name)+'</strong><span class="dev-trend-v119 '+t.cls+'">'+t.icon+' '+esc(t.label)+'</span>'+devGainHTMLV119(p)+'</div>'+
+            '<div class="dev2-meta-v119">'+p.age+' años · OVR '+p.overall+' / POT '+p.potential+' · '+esc(p.positions)+'</div>'+
+            '<div class="dev-xp-v119"><i style="width:'+pct+'%"></i></div>'+
+            '<div class="dev2-reason-v119">'+esc(reasonV119(p))+' · progreso '+pct+'%</div>'+
+            (last?'<div class="dev-history-v119">Último cambio: '+dateStr(last.date)+' · '+(last.delta>0?'+':'')+(last.delta||0)+' OVR</div>':'')+
+          '</div>'+
+          '<div class="dev2-focus-v119"><small class="muted">Plan individual</small><select class="devFocusV119" data-id="'+esc(String(p.id))+'">'+V7_FOCUS.map(x=>'<option '+(p.individualFocus===x?'selected':'')+'>'+esc(x)+'</option>').join('')+'</select><div class="dev-history-v119">Foco '+Math.round(p.focusProgressV119||0)+'%</div></div>'+
+          '<div style="text-align:right"><small class="muted">Ritmo</small><div><strong>'+esc(ageFactorV119(p.age)>=1.2?'Muy alto':ageFactorV119(p.age)>=.75?'Alto':ageFactorV119(p.age)>=.4?'Medio':'Bajo')+'</strong></div><div class="dev-history-v119">Techo restante '+Math.max(0,p.potential-p.overall)+'</div></div>'+
+        '</div>';
+      }).join('')+'</div></div>';
+
+    els.view.querySelectorAll('.devFocusV119').forEach(sel=>sel.onchange=()=>{
+      const p=S.players.find(x=>String(x.id)===String(sel.dataset.id));
+      if(!p)return;
+      p.individualFocus=sel.value;
+      p.focusProgressV119=0;
+      save();
+      render('development');
+    });
   };
 })();
 
