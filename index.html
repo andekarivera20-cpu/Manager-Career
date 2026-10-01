@@ -5224,6 +5224,208 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== PLAYER FORM 10.11 =====
+// Forma real basada en los últimos 5 partidos oficiales del jugador.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.form-pill-v111{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:3px 7px;font-size:10px;font-weight:900;white-space:nowrap}'+
+    '.form-pill-v111.hot{color:#ffdc77;border-color:#725f26;background:#251f0b}'+
+    '.form-pill-v111.good{color:#8ee8a8;border-color:#315f41;background:#102319}'+
+    '.form-pill-v111.cold{color:#9ec8ff;border-color:#345a78;background:#0e1a26}'+
+    '.form-pill-v111.bad{color:#ff9a9a;border-color:#733838;background:#251111}'+
+    '.form-pill-v111.neutral{color:#c8d0cb}'+
+    '.form-strip-v111{display:flex;gap:3px;margin-top:5px;align-items:center}'+
+    '.form-dot-v111{width:18px;height:18px;border-radius:5px;border:1px solid var(--line);display:grid;place-items:center;font-size:8px;font-weight:900;background:#0b1610}'+
+    '.form-dot-v111.hi{background:#173923;color:#a4f0b7;border-color:#356848}'+
+    '.form-dot-v111.lo{background:#371717;color:#ffabab;border-color:#744040}'+
+    '.form-dot-v111.mid{color:#cbd3ce}'+
+    '.tactic-form-v111{position:absolute;right:3px;bottom:3px;font-size:9px;font-weight:950;padding:2px 4px;border-radius:999px;background:#07110ddd;border:1px solid #355344}'+
+    '.player-dot{position:relative}'+
+    '@media(max-width:700px){.form-dot-v111{width:16px;height:16px}.form-pill-v111{font-size:9px;padding:3px 6px}}';
+  document.head.appendChild(style);
+
+  const ensureV111Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV111Base();
+    if(!S)return;
+    for(const p of S.players||[]){
+      p.recentRatingsV111=Array.isArray(p.recentRatingsV111)?p.recentRatingsV111.slice(-5):[];
+      p.formAppearancesV111=p.formAppearancesV111||0;
+    }
+  };
+
+  function formAvgV111(p){
+    const a=p?.recentRatingsV111||[];
+    if(!a.length)return null;
+    return a.reduce((s,x)=>s+x,0)/a.length;
+  }
+  function formInfoV111(p){
+    const a=p?.recentRatingsV111||[],avg=formAvgV111(p);
+    if(avg==null)return{label:'Sin forma',icon:'•',cls:'neutral',avg:null};
+    if(a.length>=3&&avg>=7.45)return{label:'En fuego',icon:'🔥',cls:'hot',avg};
+    if(a.length>=3&&avg>=6.95)return{label:'Buena',icon:'↗',cls:'good',avg};
+    if(a.length>=3&&avg<=5.75)return{label:'Muy baja',icon:'🧊',cls:'bad',avg};
+    if(a.length>=3&&avg<=6.15)return{label:'Floja',icon:'↘',cls:'cold',avg};
+    return{label:'Normal',icon:'→',cls:'neutral',avg};
+  }
+  function formHTMLV111(p,detail=false){
+    const f=formInfoV111(p),a=p?.recentRatingsV111||[];
+    const pill='<span class="form-pill-v111 '+f.cls+'" title="Forma basada en los últimos '+a.length+' partidos">'+f.icon+' '+(f.avg==null?'—':f.avg.toFixed(1))+' · '+f.label+'</span>';
+    if(!detail||!a.length)return pill;
+    return pill+'<div class="form-strip-v111">'+a.map(x=>'<span class="form-dot-v111 '+(x>=7?'hi':x<=6?'lo':'mid')+'">'+x.toFixed(1)+'</span>').join('')+'</div>';
+  }
+  window.formInfoV111=formInfoV111;
+
+  function usedIdsV111(M){
+    const ids=new Set(M.startingXI||[]);
+    for(const s of M.subLog||[])ids.add(s.inId);
+    return [...ids];
+  }
+
+  const postMatchV111Base=postMatchV7;
+  postMatchV7=function(M,myGoals,oppGoals,f){
+    ensureV7State();
+    if(f.comp==='Pretemporada'){
+      postMatchV111Base(M,myGoals,oppGoals,f);
+      return;
+    }
+
+    const before={};
+    for(const id of usedIdsV111(M)){
+      const p=S.players.find(x=>String(x.id)===String(id));
+      if(!p)continue;
+      before[String(id)]={
+        ratingSum:p.ratingSum||0,
+        appearances:p.appearances||0,
+        goals:p.goals||0,
+        assists:p.assists||0,
+        cleanSheets:p.cleanSheets||0,
+        oldLabel:formInfoV111(p).label
+      };
+    }
+
+    postMatchV111Base(M,myGoals,oppGoals,f);
+
+    for(const id of usedIdsV111(M)){
+      const p=S.players.find(x=>String(x.id)===String(id)),b=before[String(id)];
+      if(!p||!b)continue;
+
+      let rating=(p.ratingSum||0)-b.ratingSum;
+      if(!Number.isFinite(rating)||rating<=0){
+        rating=6.2+(myGoals>oppGoals?.45:myGoals===oppGoals?.05:-.35)+(Math.random()*.6-.2);
+      }
+
+      const dg=(p.goals||0)-b.goals,da=(p.assists||0)-b.assists,dc=(p.cleanSheets||0)-b.cleanSheets;
+      rating+=dg*.5+da*.28+dc*.18;
+      rating=clamp(rating,4.5,9.8);
+
+      p.recentRatingsV111=p.recentRatingsV111||[];
+      p.recentRatingsV111.push(Number(rating.toFixed(1)));
+      p.recentRatingsV111=p.recentRatingsV111.slice(-5);
+      p.formAppearancesV111=(p.formAppearancesV111||0)+1;
+
+      const now=formInfoV111(p);
+      if(p.recentRatingsV111.length>=3&&now.label!==b.oldLabel){
+        if(now.label==='En fuego'){
+          addNews('Jugador en gran forma',p.name+' atraviesa su mejor momento: '+now.avg.toFixed(1)+' de media en sus últimos partidos.','plantilla');
+        }else if(now.label==='Muy baja'){
+          addNews('Baja forma',p.name+' atraviesa una mala racha de rendimiento ('+now.avg.toFixed(1)+').','plantilla');
+        }
+      }
+    }
+  };
+
+  const teamPowerV111Base=teamPower;
+  teamPower=function(ids){
+    let base=teamPowerV111Base(ids);
+    if(!Array.isArray(ids)||!ids.length)return base;
+    const ps=ids.map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+    if(!ps.length)return base;
+
+    const adjustments=ps.map(p=>{
+      const f=formAvgV111(p);
+      if(f==null||(p.recentRatingsV111||[]).length<2)return 0;
+      return clamp((f-6.5)*.72,-1.15,1.15);
+    });
+    const avg=adjustments.reduce((a,x)=>a+x,0)/adjustments.length;
+    return base+avg;
+  };
+
+  const renderSquadV111Base=renderSquad;
+  renderSquad=function(){
+    ensureV7State();
+    renderSquadV111Base();
+    const ps=getClubPlayers(S.club).sort((a,b)=>b.overall-a.overall);
+    const cards=[...els.view.querySelectorAll('.mobile-cards .player-card')];
+    const rows=[...els.view.querySelectorAll('.tablewrap tbody tr')];
+
+    ps.forEach((p,i)=>{
+      if(cards[i]){
+        const head=cards[i].querySelector('.player-card-head>div')||cards[i].querySelector('.player-card-head');
+        if(head&&!cards[i].querySelector('.form-pill-v111')){
+          const box=document.createElement('div');
+          box.style.marginTop='5px';
+          box.innerHTML=formHTMLV111(p,true);
+          head.appendChild(box);
+        }
+      }
+      if(rows[i]?.cells?.[0]&&!rows[i].querySelector('.form-pill-v111')){
+        rows[i].cells[0].insertAdjacentHTML('beforeend','<br>'+formHTMLV111(p,false));
+      }
+    });
+  };
+
+  const renderTacticsV111Base=renderTactics;
+  renderTactics=function(){
+    ensureV7State();
+    renderTacticsV111Base();
+
+    const dots=[...els.view.querySelectorAll('.player-dot')];
+    dots.forEach((dot,i)=>{
+      const id=S.lineup[i],p=S.players.find(x=>String(x.id)===String(id));
+      if(!p)return;
+      const f=formInfoV111(p);
+      const badge=document.createElement('span');
+      badge.className='tactic-form-v111';
+      badge.textContent=f.icon+(f.avg==null?'':f.avg.toFixed(1));
+      badge.title='Forma: '+f.label+(f.avg==null?'':' · '+f.avg.toFixed(1));
+      dot.appendChild(badge);
+    });
+
+    const chips=[...els.view.querySelectorAll('.bench .chip')];
+    const benchPs=(S.bench||[]).map(id=>S.players.find(x=>String(x.id)===String(id))).filter(Boolean);
+    chips.forEach((chip,i)=>{
+      const p=benchPs[i];if(!p)return;
+      const f=formInfoV111(p);
+      chip.textContent+=' · '+f.icon+(f.avg==null?'—':f.avg.toFixed(1));
+      chip.title='Forma: '+f.label;
+    });
+  };
+
+  const slotPickerV111Base=openSlotPicker;
+  openSlotPicker=function(slot){
+    ensureV7State();
+    slotPickerV111Base(slot);
+    const formSlot=FORMATIONS[S.formation][slot].p;
+    const squad=getClubPlayers(S.club).filter(p=>!isUnavailable(p)).slice().sort((a,b)=>b.overall-a.overall);
+    const rows=[...els.matchBox.querySelectorAll('tbody tr')];
+    rows.forEach((tr,i)=>{
+      const p=squad[i];if(!p)return;
+      const cells=tr.querySelectorAll('td');
+      if(cells[0]&&!tr.querySelector('.form-pill-v111')){
+        cells[0].insertAdjacentHTML('beforeend','<div style="margin-top:4px">'+formHTMLV111(p,false)+'</div>');
+      }
+      if(cells[3]){
+        const f=formAvgV111(p);
+        const effective=playerFit(p,formSlot)+(f==null?0:clamp((f-6.5)*1.2,-2,2));
+        cells[3].innerHTML=playerFit(p,formSlot)+'<br><small class="muted">actual '+effective.toFixed(1)+'</small>';
+      }
+    });
+  };
+})();
+
 loadDB();
 })();
 </script>
