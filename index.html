@@ -8109,6 +8109,345 @@ loadDB=async function(){
   };
 })();
 
+
+// ===== CONTRACTS & RENEWALS AI 2.0 10.21 =====
+// Renovaciones y salidas contractuales con decisiones de club, voluntad del jugador,
+// preacuerdos, avisos al usuario y una carga mensual contenida.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.contract-summary-v121{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:10px 0 12px}'+
+    '.contract-kpi-v121{padding:10px;border:1px solid var(--line);border-radius:11px;background:#09150f}.contract-kpi-v121 small{display:block;color:var(--muted);font-size:9px}.contract-kpi-v121 strong{font-size:18px}'+
+    '.contract-priority-v121{display:grid;gap:6px;margin-bottom:12px}.contract-priority-row-v121{display:grid;grid-template-columns:minmax(180px,1.2fr) minmax(120px,.8fr) auto;gap:9px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#09150f}'+
+    '.contract-status-v121{display:inline-flex;align-items:center;gap:4px;padding:3px 6px;border-radius:999px;border:1px solid var(--line);font-size:9px;font-weight:900}.contract-status-v121.ok{color:#8ee8a8;border-color:#315f42}.contract-status-v121.warn{color:#ffd08a;border-color:#72542d}.contract-status-v121.bad{color:#ff9d9d;border-color:#733939}.contract-status-v121.neutral{color:#c6d0ca}'+
+    '.contract-world-v121{display:grid;gap:6px}.contract-world-row-v121{display:grid;grid-template-columns:minmax(170px,1fr) minmax(130px,.8fr) auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}'+
+    '.renew-context-v121{padding:10px;margin:0 0 11px;border:1px solid var(--line);border-radius:10px;background:#09150f}.renew-context-v121 strong{display:block;margin-bottom:3px}'+
+    '@media(max-width:760px){.contract-summary-v121{grid-template-columns:1fr 1fr}.contract-priority-row-v121,.contract-world-row-v121{grid-template-columns:1fr auto}.contract-priority-row-v121>div:nth-child(2),.contract-world-row-v121>div:nth-child(2){grid-column:1/-1}}';
+  document.head.appendChild(style);
+
+  function contractStateV121(){
+    S.contractAIV121=S.contractAIV121||{lastRunKey:null,log:[],alerts:{},precontracts:0,renewals:0,exits:0};
+    S.contractAIV121.log=S.contractAIV121.log||[];
+    S.contractAIV121.alerts=S.contractAIV121.alerts||{};
+    return S.contractAIV121;
+  }
+  function contractDaysV121(p,date=S.date){
+    return daysUntil(date,p.contractUntil||defaultContractUntil(p,date));
+  }
+  function marketWageV121(p){
+    const current=Math.max(600,Number(p.wage||0));
+    const ovr=Math.max(45,Number(p.overall||50));
+    const pot=Math.max(ovr,Number(p.potential||ovr));
+    let factor=1.02+Math.max(0,ovr-65)*.017+Math.max(0,pot-ovr)*.006;
+    if(p.age<=23)factor+=.06;
+    if(p.age>=32)factor-=.06;
+    if(p.squadRole==='Clave'||p.hierarchy==='Líder')factor+=.08;
+    return Math.max(700,Math.round(current*clamp(factor,.92,1.72)/100)*100);
+  }
+  function renewalStanceV121(p){
+    const d=contractDaysV121(p);
+    let score=58;
+    score+=(Number(p.morale||70)-65)*.55;
+    score+=p.personality==='Leal'?12:p.personality==='Profesional'?5:p.personality==='Ambicioso'?-4:p.personality==='Volátil'?-7:0;
+    score+=p.squadRole==='Clave'?7:p.squadRole==='Importante'?3:0;
+    if(p.wantsOut)score-=36;
+    if(p.transferListed)score-=20;
+    if(d<=180)score-=3;
+    if((p.devMinutesV119||p.minutes||0)<350&&(S.record?.p||0)>=10&&p.age<=29)score-=8;
+    if(score>=66)return{score,label:'Quiere continuar',cls:'ok',icon:'✅'};
+    if(score>=45)return{score,label:'Abierto a negociar',cls:'neutral',icon:'🤝'};
+    if(score>=28)return{score,label:'Tiene dudas',cls:'warn',icon:'⚠️'};
+    return{score,label:'Piensa en salir',cls:'bad',icon:'🚪'};
+  }
+  function aiKeepScoreV121(p,club,clubRating){
+    const gap=(p.overall||50)-clubRating;
+    const upside=Math.max(0,(p.potential||p.overall)-(p.overall||0));
+    let score=52+gap*3+Math.min(18,upside*1.4);
+    if(p.age<=23)score+=9;
+    if(p.age>=32)score-=(p.age-31)*5;
+    if(p.hierarchy==='Líder'||p.squadRole==='Clave')score+=10;
+    if(p.wantsOut)score-=23;
+    if((p.morale||70)<45)score-=10;
+    const pf=window.clubBoardProfileV117?.(club);
+    if(p.age<=23&&pf)score+=(pf.youth||3)*2;
+    return score;
+  }
+  function contractYearsV121(p){
+    if(p.age<=21)return 5;
+    if(p.age<=25)return 4;
+    if(p.age<=29)return 3;
+    if(p.age<=32)return 2;
+    return 1;
+  }
+  function logContractV121(type,p,club,detail,toClub){
+    const st=contractStateV121();
+    st.log.unshift({date:S.date,type,playerId:p.id,player:p.name,club,detail:detail||'',toClub:toClub||null});
+    st.log=st.log.slice(0,120);
+    if(type==='renew')st.renewals=(st.renewals||0)+1;
+    if(type==='leave')st.exits=(st.exits||0)+1;
+    if(type==='precontract')st.precontracts=(st.precontracts||0)+1;
+  }
+  function findPrecontractClubV121(p,from){
+    const r=clubRatingDB(from);
+    const candidates=[];
+    for(const [club] of DB.clubs){
+      if(club===from||club===S.club)continue;
+      const cr=clubRatingDB(club);
+      if(cr<r-6||cr>r+8)continue;
+      const pf=window.clubBoardProfileV117?.(club)||{ambition:3,youth:3,stars:3};
+      let score=50-Math.abs(cr-r)*2+(pf.ambition||3)*3;
+      if(p.age<=23)score+=(pf.youth||3)*2;
+      if((p.overall||0)>=82)score+=(pf.stars||3)*3;
+      score+=Math.random()*14;
+      candidates.push({club,score});
+    }
+    candidates.sort((a,b)=>b.score-a.score);
+    return candidates[0]?.club||null;
+  }
+  function setAIContractDecisionV121(p,label,reason){
+    p.aiContractDecisionV121=label;
+    p.aiContractReasonV121=reason||'';
+    p.aiContractDecisionDateV121=S.date;
+  }
+  function renewAIPlayerV121(p,club){
+    const years=contractYearsV121(p);
+    const wage=marketWageV121(p);
+    p.wage=Math.max(p.wage||0,wage);
+    p.contractUntil=String(contractYear(S.date)+years)+'-06-30';
+    p.releaseClause=Math.max(p.releaseClause||0,Math.round(Math.max(p.value||0,500000)*(1.55+(Math.random()*.55))));
+    p.morale=clamp((p.morale||70)+rnd(1,5),20,100);
+    p.preContractV121=null;
+    setAIContractDecisionV121(p,'renewed','El club lo considera parte de su proyecto');
+    logContractV121('renew',p,club,'Renueva hasta '+String(p.contractUntil).slice(0,4));
+  }
+  function markAIExitV121(p,club,reason){
+    setAIContractDecisionV121(p,'leaving',reason);
+    logContractV121('leave',p,club,reason);
+  }
+  function maybePrecontractV121(p,club){
+    if(p.preContractV121||p.age>=35||contractDaysV121(p)>183||contractDaysV121(p)<0)return;
+    if((p.overall||0)<68&&Math.max(p.overall||0,p.potential||0)<75)return;
+    const to=findPrecontractClubV121(p,club);
+    if(!to)return;
+    const chance=clamp(.12+((p.overall||65)-68)*.018+(p.wantsOut?.12:0),.10,.58);
+    if(Math.random()>chance)return;
+    const years=contractYearsV121(p);
+    p.preContractV121={to,agreed:S.date,years,wage:Math.round(marketWageV121(p)*1.08/100)*100};
+    setAIContractDecisionV121(p,'precontract','Tiene un acuerdo para salir al finalizar contrato');
+    logContractV121('precontract',p,club,'Preacuerdo para salir libre',to);
+    if((p.overall||0)>=80)addNews('Preacuerdo contractual',p.name+' dejará '+club+' al terminar contrato para incorporarse a '+to+'.','mercado mundial');
+  }
+  function processExpiredAIContractsV121(date){
+    for(const p of S.players||[]){
+      if(!p.club||p.club===S.club||p.club==='Retirado'||p.club==='Agente libre'||p.parentClub)continue;
+      if(!p.contractUntil||p.contractUntil>=date)continue;
+      const old=p.club;
+      if(p.preContractV121?.to){
+        const pc=p.preContractV121;
+        p.club=pc.to;
+        p.leagueId=DB.clubs.get(pc.to)?.leagueId||p.leagueId;
+        p.leagueName=EURO_LEAGUES[p.leagueId]?.name||p.leagueName;
+        p.wage=pc.wage||marketWageV121(p);
+        p.contractUntil=String(contractYear(date)+(pc.years||3))+'-06-30';
+        p.preContractV121=null;
+        p.morale=76;
+        S.worldTransfers.unshift({date,player:p.name,from:old,to:p.club,fee:0,type:'free'});
+        S.worldTransfers=S.worldTransfers.slice(0,250);
+        logContractV121('join',p,old,'Llega libre tras un preacuerdo',p.club);
+      }else{
+        p.club='Agente libre';
+        setAIContractDecisionV121(p,'free','Finalizó contrato sin acuerdo de renovación');
+        logContractV121('free',p,old,'Sale como agente libre');
+        if((p.overall||0)>=78)addNews('Agente libre',p.name+' abandona '+old+' tras finalizar su contrato.','mercado mundial');
+      }
+    }
+  }
+  function processAIContractsV121(date){
+    const st=contractStateV121();
+    const d=new Date(date+'T12:00:00Z');
+    if(d.getUTCDate()!==1)return;
+    const key=date.slice(0,7);
+    if(st.lastRunKey===key)return;
+    st.lastRunKey=key;
+
+    processExpiredAIContractsV121(date);
+
+    const byClub=new Map();
+    for(const p of S.players||[]){
+      if(!p.club||p.club===S.club||p.club==='Agente libre'||p.club==='Retirado'||p.parentClub)continue;
+      const days=contractDaysV121(p,date);
+      if(days>390||days<0)continue;
+      if(!byClub.has(p.club))byClub.set(p.club,[]);
+      byClub.get(p.club).push(p);
+    }
+
+    const monthSeed=hashV7(key+'|contracts-v121');
+    const clubs=[...byClub.keys()]
+      .map((club,i)=>({club,key:hashV7(club+'|'+monthSeed+'|'+i)}))
+      .sort((a,b)=>a.key-b.key)
+      .slice(0,55)
+      .map(x=>x.club);
+
+    for(const club of clubs){
+      const ps=byClub.get(club)||[];
+      const rating=clubRatingDB(club);
+      ps.sort((a,b)=>contractDaysV121(a,date)-contractDaysV121(b,date)||(b.overall||0)-(a.overall||0));
+      for(const p of ps.slice(0,8)){
+        const days=contractDaysV121(p,date);
+        if(p.aiContractDecisionV121==='renewed'&&days>250)continue;
+        const keep=aiKeepScoreV121(p,club,rating);
+        const urgent=days<=190;
+        const attempt=keep>=58||(urgent&&keep>=48);
+        if(attempt){
+          let accept=clamp(.36+(keep-45)/85+(p.morale||70)/500-(p.wantsOut?.28:0),.12,.94);
+          if(p.personality==='Leal')accept+=.08;
+          if(Math.random()<accept){
+            renewAIPlayerV121(p,club);
+            continue;
+          }
+          setAIContractDecisionV121(p,'talks','Las conversaciones siguen abiertas');
+        }
+        if(days<=300&&keep<50&&!['leaving','precontract'].includes(p.aiContractDecisionV121)){
+          markAIExitV121(p,club,p.age>=32?'El club prepara un relevo generacional':'No entra del todo en la planificación deportiva');
+        }
+        if(days<=183&&p.aiContractDecisionV121!=='renewed')maybePrecontractV121(p,club);
+      }
+    }
+    save();
+  }
+  function userContractAlertsV121(date){
+    const st=contractStateV121();
+    for(const p of getClubPlayers(S.club)){
+      const days=contractDaysV121(p,date);
+      let level=null;
+      if(days<=45)level='45';
+      else if(days<=180)level='180';
+      else if(days<=365)level='365';
+      if(!level)continue;
+      const k=String(p.id)+'|'+level+'|'+String(p.contractUntil);
+      if(st.alerts[k])continue;
+      st.alerts[k]=date;
+      const stance=renewalStanceV121(p);
+      const msg=level==='45'
+        ?'🚨 '+p.name+' termina contrato en menos de 45 días. '+stance.label+'.'
+        :level==='180'
+          ?'⚠️ '+p.name+' entra en sus últimos 6 meses de contrato. '+stance.label+'.'
+          :'📝 '+p.name+' entra en su último año de contrato. '+stance.label+'.';
+      S.inbox.unshift({date,text:msg});
+      if(level!=='365')addNews('Situación contractual',p.name+': '+stance.label+'. Contrato hasta '+String(p.contractUntil).slice(0,4)+'.','contrato');
+    }
+  }
+
+  const ensureV121Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV121Base();
+    if(!S)return;
+    contractStateV121();
+  };
+
+  const worldDayV121Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV121Base(date);
+    ensureV7State();
+    userContractAlertsV121(date);
+    processAIContractsV121(date);
+  };
+
+  const renewV121Base=openRenewContractV7;
+  openRenewContractV7=function(id){
+    ensureV7State();
+    const p=S.players.find(x=>String(x.id)===String(id));
+    renewV121Base(id);
+    if(!p)return;
+    const send=els.matchBox.querySelector('#sendRenew');
+    if(!send)return;
+    const stance=renewalStanceV121(p);
+    const demand=marketWageV121(p);
+    const wageInput=els.matchBox.querySelector('#renewWage');
+    if(wageInput&&Number(wageInput.value)<demand)wageInput.value=demand;
+    const info=document.createElement('div');
+    info.className='renew-context-v121';
+    info.innerHTML='<strong>'+stance.icon+' '+esc(stance.label)+'</strong><div class="muted">Expectativa salarial aproximada: '+euro(demand)+'/sem · '+esc(contractStatus(p))+' · moral '+Math.round(p.morale||70)+'/100</div>';
+    send.insertAdjacentElement('beforebegin',info);
+
+    const oldClick=send.onclick;
+    send.onclick=function(e){
+      const wage=Math.max(0,+($('#renewWage')?.value||0));
+      const bonus=Math.max(0,+($('#renewBonus')?.value||0));
+      const role=$('#renewRole')?.value||'Rotación';
+      let willingness=stance.score+(wage/Math.max(1,demand)-1)*42+Math.min(14,bonus/Math.max(1,demand*2));
+      if(role==='Clave')willingness+=7;
+      else if(role==='Importante')willingness+=3;
+      if(p.wantsOut)willingness-=12;
+      if(willingness<22&&Math.random()<.76){
+        p.renewalRefusalsV121=(p.renewalRefusalsV121||0)+1;
+        addNews('Renovación complicada',p.name+' no está convencido de continuar y rechaza sentarse a cerrar el acuerdo.','contrato');
+        toast(p.name+' no quiere renovar en estas condiciones.');
+        save();
+        return;
+      }
+      const before=p.contractUntil;
+      if(typeof oldClick==='function')oldClick.call(this,e);
+      if(p.contractUntil!==before){
+        p.aiContractDecisionV121=null;
+        p.renewalRefusalsV121=0;
+        logContractV121('user-renew',p,S.club,'Renovación cerrada por el entrenador');
+        save();
+      }else{
+        p.renewalRefusalsV121=(p.renewalRefusalsV121||0)+1;
+      }
+    };
+  };
+
+  const renderContractsV121Base=renderContractsV7;
+  renderContractsV7=function(){
+    renderContractsV121Base();
+    ensureV7State();
+    const ps=getClubPlayers(S.club);
+    const lastYear=ps.filter(p=>contractDaysV121(p)<=365).length;
+    const six=ps.filter(p=>contractDaysV121(p)<=183).length;
+    const danger=ps.filter(p=>renewalStanceV121(p).score<45&&contractDaysV121(p)<=365).length;
+    const wage=ps.reduce((a,p)=>a+(p.wage||0),0);
+    const priorities=ps.filter(p=>contractDaysV121(p)<=550)
+      .sort((a,b)=>contractDaysV121(a)-contractDaysV121(b)||renewalStanceV121(a).score-renewalStanceV121(b).score)
+      .slice(0,8);
+    const top=els.view.querySelector('.row');
+    if(top){
+      const box=document.createElement('div');
+      box.innerHTML=
+        '<div class="contract-summary-v121">'+
+          '<div class="contract-kpi-v121"><small>ÚLTIMO AÑO</small><strong>'+lastYear+'</strong></div>'+
+          '<div class="contract-kpi-v121"><small>ÚLTIMOS 6 MESES</small><strong>'+six+'</strong></div>'+
+          '<div class="contract-kpi-v121"><small>RIESGO DE SALIDA</small><strong>'+danger+'</strong></div>'+
+          '<div class="contract-kpi-v121"><small>MASA SALARIAL / SEM</small><strong style="font-size:14px">'+euro(wage)+'</strong></div>'+
+        '</div>'+
+        (priorities.length?'<div class="card"><div class="row"><strong>📋 Prioridades contractuales</strong><span class="spacer"></span><span class="badge">'+priorities.length+' casos</span></div><div class="contract-priority-v121">'+priorities.map(p=>{
+          const st=renewalStanceV121(p);
+          return '<div class="contract-priority-row-v121"><div><strong>'+esc(p.name)+'</strong><div class="muted">'+p.age+' años · OVR '+p.overall+' · '+euro(p.wage||0)+'/sem</div></div><div><span class="contract-status-v121 '+st.cls+'">'+st.icon+' '+esc(st.label)+'</span><div class="muted">'+esc(contractStatus(p))+'</div></div><button class="btn ghost renewV121" data-id="'+esc(String(p.id))+'">Negociar</button></div>';
+        }).join('')+'</div></div>':'');
+      top.insertAdjacentElement('afterend',box);
+      box.querySelectorAll('.renewV121').forEach(b=>b.onclick=()=>openRenewContractV7(b.dataset.id));
+    }
+  };
+
+  const renderWorldV121Base=renderWorldV7;
+  renderWorldV7=function(){
+    renderWorldV121Base();
+    ensureV7State();
+    const log=contractStateV121().log.slice(0,10);
+    const card=document.createElement('div');
+    card.className='card';
+    card.style.marginTop='14px';
+    card.innerHTML='<div class="row"><h3 style="margin:0">📝 Mercado contractual</h3><span class="spacer"></span><span class="badge">IA contratos 2.0</span></div>'+
+      '<div class="contract-world-v121">'+(log.length?log.map(x=>{
+        const label=x.type==='renew'?'Renovación':x.type==='precontract'?'Preacuerdo':x.type==='join'?'Llegada libre':x.type==='free'?'Fin de contrato':x.type==='leave'?'Salida prevista':'Movimiento';
+        return '<div class="contract-world-row-v121"><div><strong>'+esc(x.player)+'</strong><div class="muted">'+esc(x.club||'')+'</div></div><div>'+esc(x.detail||label)+(x.toClub?' · '+esc(x.toClub):'')+'</div><span class="contract-status-v121 '+(x.type==='renew'?'ok':x.type==='precontract'||x.type==='leave'?'warn':x.type==='free'?'bad':'neutral')+'">'+esc(label)+'</span></div>';
+      }).join(''):'<div class="empty">Todavía no hay decisiones contractuales destacadas.</div>')+'</div>';
+    els.view.appendChild(card);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
