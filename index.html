@@ -9517,7 +9517,8 @@ loadDB=async function(){
   ensureV7State=function(){
     ensureV124Base();
     if(!S)return;
-    for(const p of S.players||[])initAttributesV124(p);
+    // Mantener ligero: solo sincronizamos la plantilla propia; el resto se inicializa al buscar/ojear.
+    for(const p of getClubPlayers(S.club))initAttributesV124(p);
   };
 })();
 
