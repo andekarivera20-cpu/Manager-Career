@@ -13536,6 +13536,116 @@ loadDB=async function(){
 })();
 
 
+
+// ===== MOBILE MATCH CLEANUP 10.46 =====
+// Rediseño móvil: menos elementos sticky, campo grande y legible,
+// controles ordenados y texto con tamaños reales de móvil.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '@media(max-width:760px){'+
+      '#matchModal.match-game-v144{background:#050a07!important;padding:0!important;overflow-y:auto!important;overscroll-behavior-y:contain!important}'+
+      '#matchModal.match-game-v144>#matchBox{padding:0 8px calc(28px + env(safe-area-inset-bottom))!important;background:#07110d!important;min-height:100%!important}'+
+      '#matchModal.match-game-v144 .match-top-v126{position:sticky!important;top:0!important;z-index:40!important;margin:0 -8px 8px!important;padding:8px 10px!important;border-radius:0!important;border-left:0!important;border-right:0!important;box-shadow:0 5px 15px #0008!important}'+
+      '#matchModal.match-game-v144 .match-scoreline-v126{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)!important;gap:7px!important}'+
+      '#matchModal.match-game-v144 .match-side-v126{font-size:10px!important;gap:5px!important}'+
+      '#matchModal.match-game-v144 .match-side-v126 .crest,#matchModal.match-game-v144 .match-side-v126 .crest-fallback{width:26px!important;height:26px!important;min-width:26px!important}'+
+      '#matchModal.match-game-v144 .match-score-v126{font-size:24px!important;gap:5px!important}'+
+      '#matchModal.match-game-v144 .match-minute-v126{font-size:10px!important;padding:3px 5px!important}'+
+      '#matchModal.match-game-v144 .match-mini-stats-v126{font-size:9px!important;gap:8px!important;margin-top:4px!important}'+
+      '.mobile-match-jump-v145{display:none!important}'+
+      '#matchModal.match-game-v144 .match-live-grid-v128{display:flex!important;flex-direction:column!important;gap:10px!important;margin-top:6px!important}'+
+      '#matchModal.match-game-v144 .flow-card-v95{order:1!important;padding:8px!important;border-radius:10px!important;background:#09160f!important}'+
+      '#matchModal.match-game-v144 .flow-head-v95{font-size:10px!important;margin-bottom:6px!important;gap:5px!important}'+
+      '#matchModal.match-game-v144 .flow-zone-v95{font-size:9px!important;max-width:44%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}'+
+      '#matchModal.match-game-v144 .pitch-collapse-v126{display:none!important}'+
+      '#matchModal.match-game-v144 .flow-pitch-v95{width:100%!important;height:auto!important;min-height:0!important;aspect-ratio:105/68!important;border-width:2px!important;border-radius:8px!important}'+
+      '#matchModal.match-game-v144 .flow-card-v95.collapsed-v126 .flow-pitch-v95{height:auto!important;aspect-ratio:105/68!important}'+
+      '#matchModal.match-game-v144 .pitch-player-v129 .shirt{transform:scale(.88)!important}'+
+      '#matchModal.match-game-v144 .pitch-player-v129 .nm{font-size:7px!important;line-height:1.05!important;max-width:54px!important;padding:1px 2px!important;opacity:.16!important}'+
+      '#matchModal.match-game-v144 .pitch-player-v129.onball .nm,#matchModal.match-game-v144 .pitch-player-v129.nearball .nm,#matchModal.match-game-v144 .pitch-player-v129.press-v131 .nm,#matchModal.match-game-v144 .pitch-player-v129.target .nm{opacity:1!important}'+
+      '#matchModal.match-game-v144 .ball-readout-v128{font-size:8px!important;max-width:68%!important;padding:4px 6px!important;top:5px!important}'+
+      '#matchModal.match-game-v144 .play-state-v129{font-size:7px!important;padding:3px 5px!important;top:5px!important;right:5px!important}'+
+      '#matchModal.match-game-v144 .action-chip-v131{display:none!important}'+
+      '#matchModal.match-game-v144 .pitch-direction-v130{font-size:5px!important;bottom:3px!important}'+
+      '#matchModal.match-game-v144 .match-commentary-v128{order:2!important;padding:8px!important;border-radius:10px!important;background:#09160f!important;max-height:none!important}'+
+      '#matchModal.match-game-v144 .match-commentary-head-v128{font-size:11px!important;margin-bottom:6px!important}'+
+      '#matchModal.match-game-v144 .match-commentary-v128 .commentary{height:245px!important;min-height:245px!important;max-height:245px!important;padding:7px!important;border-radius:8px!important}'+
+      '#matchModal.match-game-v144 .commentary .event{font-size:12px!important;line-height:1.45!important;padding:8px 7px!important}'+
+      '#matchModal.match-game-v144 .commentary .event:first-child{font-size:12px!important}'+
+      '#matchModal.match-game-v144 .commentary .event.goal{font-size:13px!important;line-height:1.4!important}'+
+      '#matchModal.match-game-v144 .scoreboard{padding:8px!important;border-radius:10px!important;margin-top:8px!important}'+
+      '#matchModal.match-game-v144 .mental-label-v127{font-size:10px!important;margin-top:6px!important}'+
+      '#matchModal.match-game-v144 .mental-bar-v127{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px!important}'+
+      '#matchModal.match-game-v144 .mental-btn-v127{min-height:46px!important;font-size:11px!important;padding:8px 5px!important}'+
+      '#matchModal.match-game-v144 .speed-wrap-v128{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:6px!important;margin:8px 0 4px!important}'+
+      '#matchModal.match-game-v144 .speed-label-v128{grid-column:1/-1!important;text-align:left!important;font-size:10px!important;margin:0!important}'+
+      '#matchModal.match-game-v144 .speed-btn-v128{min-width:0!important;min-height:42px!important;font-size:11px!important;padding:6px 2px!important}'+
+      '#matchModal.match-game-v144 .match-actions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:6px!important;margin-top:7px!important}'+
+      '#matchModal.match-game-v144 .match-actions .btn{min-height:48px!important;font-size:11px!important;padding:8px 6px!important}'+
+      '#matchModal.match-game-v144 .finish-note-v128{font-size:8px!important;margin-top:4px!important}'+
+      '#matchModal.match-game-v144 .key-events-v126{padding:9px!important;margin-top:9px!important;border-radius:10px!important;max-height:none!important}'+
+      '#matchModal.match-game-v144 .key-events-v126 h3{font-size:12px!important}'+
+      '#matchModal.match-game-v144 .key-event-v126{font-size:10px!important;padding:7px 0!important}'+
+      '#matchModal.match-game-v144 .live-ratings-v136{padding:9px!important;border-radius:10px!important;margin-top:9px!important}'+
+      '#matchModal.match-game-v144 .ratings-head-v136 h3{font-size:12px!important}'+
+      '#matchModal.match-game-v144 .ratings-grid-v136{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:5px!important}'+
+      '#matchModal.match-game-v144 .rating-row-v136{grid-template-columns:minmax(0,1fr) 27px 34px!important;min-height:36px!important;font-size:9px!important;padding:5px 6px!important}'+
+      '#matchModal.match-game-v144 .rating-live-v136{font-size:10px!important}'+
+      '#matchModal.match-game-v144 .subs-panel-v127{padding:9px!important;border-radius:10px!important;margin-top:9px!important}'+
+      '#matchModal.match-game-v144 .subs-title-v127 h3{font-size:12px!important}'+
+      '#matchModal.match-game-v144 .subs-help-v127{font-size:10px!important;line-height:1.35!important}'+
+      '#matchModal.match-game-v144 .subs-grid-v127{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:5px!important}'+
+      '#matchModal.match-game-v144 .sub-player-v127{min-height:46px!important;font-size:10px!important;padding:7px!important}'+
+      '#matchModal.match-game-v144 .sub-player-v127 small{font-size:8px!important}'+
+      '#matchModal.match-game-v144 .sub-selection-v127{font-size:10px!important;padding:7px!important}'+
+      '#matchModal.match-game-v144 .persistent-badge-v135{display:none!important}'+
+      'body.mobile-modal-open-v145 #mobileNav{display:none!important}'+
+    '}'+
+    '@media(max-width:390px){'+
+      '#matchModal.match-game-v144>#matchBox{padding-left:5px!important;padding-right:5px!important}'+
+      '#matchModal.match-game-v144 .match-top-v126{margin-left:-5px!important;margin-right:-5px!important;padding:7px 6px!important}'+
+      '#matchModal.match-game-v144 .match-side-v126{font-size:9px!important}'+
+      '#matchModal.match-game-v144 .match-side-v126 .crest,#matchModal.match-game-v144 .match-side-v126 .crest-fallback{width:22px!important;height:22px!important;min-width:22px!important}'+
+      '#matchModal.match-game-v144 .match-score-v126{font-size:21px!important}'+
+      '#matchModal.match-game-v144 .match-mini-stats-v126{font-size:8px!important;gap:5px!important}'+
+      '#matchModal.match-game-v144 .pitch-player-v129 .nm{display:none!important}'+
+      '#matchModal.match-game-v144 .pitch-player-v129.onball .nm,#matchModal.match-game-v144 .pitch-player-v129.nearball .nm{display:block!important;font-size:7px!important}'+
+      '#matchModal.match-game-v144 .match-commentary-v128 .commentary{height:220px!important;min-height:220px!important;max-height:220px!important}'+
+      '#matchModal.match-game-v144 .ratings-grid-v136{grid-template-columns:1fr!important}'+
+      '#matchModal.match-game-v144 .subs-grid-v127{grid-template-columns:1fr!important}'+
+    '}'+
+    '@media(max-width:900px) and (orientation:landscape){'+
+      '#matchModal.match-game-v144>#matchBox{padding:5px 8px 20px!important}'+
+      '#matchModal.match-game-v144 .match-live-grid-v128{display:grid!important;grid-template-columns:minmax(0,1.45fr) minmax(240px,.75fr)!important;gap:8px!important}'+
+      '#matchModal.match-game-v144 .match-commentary-v128{order:initial!important}'+
+      '#matchModal.match-game-v144 .match-commentary-v128 .commentary{height:235px!important;min-height:235px!important;max-height:235px!important}'+
+      '#matchModal.match-game-v144 .match-top-v126{padding:5px 8px!important}'+
+    '}';
+  document.head.appendChild(style);
+
+  // La barra Campo/Relato/Cambios/Notas añadía demasiado ruido vertical en teléfono.
+  function cleanMobileJumpV146(){
+    if(window.matchMedia('(max-width:760px)').matches){
+      els.matchBox?.querySelectorAll('.mobile-match-jump-v145').forEach(x=>x.remove());
+    }
+  }
+
+  const renderBaseV146=renderMatch;
+  renderMatch=function(M){
+    renderBaseV146(M);
+    if(!M)return;
+    requestAnimationFrame(cleanMobileJumpV146);
+  };
+
+  const openBaseV146=openMatch;
+  openMatch=function(f){
+    openBaseV146(f);
+    requestAnimationFrame(cleanMobileJumpV146);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
