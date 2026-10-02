@@ -10057,6 +10057,138 @@ loadDB=async function(){
 })();
 
 
+
+// ===== MATCH EXPERIENCE 2.1 10.27 =====
+// Campo más completo, cambios sin desplegables, relato más visible y mentalidad por botones.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.flow-pitch-v95{background:repeating-linear-gradient(90deg,#145329 0 8.333%,#195e31 8.333% 16.666%)!important;box-shadow:inset 0 0 0 1px #ffffff12,inset 0 0 45px #001d0da8,0 9px 24px #0007!important}'+
+    '.pitch-corner-v127{position:absolute;width:22px;height:22px;border:1px solid #e8f5e8aa;z-index:1}.pitch-corner-v127.tl{left:-11px;top:-11px;border-radius:0 0 100% 0}.pitch-corner-v127.tr{right:-11px;top:-11px;border-radius:0 0 0 100%}.pitch-corner-v127.bl{left:-11px;bottom:-11px;border-radius:0 100% 0 0}.pitch-corner-v127.br{right:-11px;bottom:-11px;border-radius:100% 0 0 0}'+
+    '.pitch-arc-v127{position:absolute;top:35%;bottom:35%;width:8%;border:1px solid #e8f5e888;border-radius:50%;z-index:1}.pitch-arc-v127.left{left:13%;border-left-color:transparent}.pitch-arc-v127.right{right:13%;border-right-color:transparent}'+
+    '.pitch-player-v127{position:absolute;z-index:4;transform:translate(-50%,-50%);transition:left .45s linear,top .45s linear;text-align:center;pointer-events:none}'+
+    '.pitch-shirt-v127{width:18px;height:18px;border-radius:6px 6px 8px 8px;border:2px solid #ffffffbd;box-shadow:0 2px 6px #000c;display:grid;place-items:center;font-size:7px;font-weight:950;color:#fff}.pitch-player-v127.us .pitch-shirt-v127{background:#1679c9}.pitch-player-v127.them .pitch-shirt-v127{background:#ca3d3d}.pitch-player-v127.gk .pitch-shirt-v127{background:#d79b20}'+
+    '.pitch-name-v127{display:block;max-width:66px;margin-top:2px;padding:1px 3px;border-radius:4px;background:#06100dcc;color:#fff;font-size:7px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000}'+
+    '.mental-bar-v127{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:6px 0 2px}.mental-btn-v127{border:1px solid var(--line);background:#0b1711;color:var(--muted);border-radius:8px;padding:7px 5px;font-size:9px;font-weight:900;cursor:pointer}.mental-btn-v127:hover{background:#12251a;color:var(--text)}.mental-btn-v127.active{background:#1a3a26;border-color:#4f8b62;color:#c5f1d0;box-shadow:inset 0 0 0 1px #5ba06f55}'+
+    '.mental-label-v127{font-size:9px;color:var(--muted);font-weight:850;margin-top:5px}.scoreboard #liveMent{display:none!important}'+
+    '.subs-panel-v127{padding:10px!important}.subs-title-v127{display:flex;align-items:center;gap:6px;margin-bottom:7px}.subs-title-v127 h3{margin:0;font-size:13px}.subs-help-v127{font-size:9px;color:var(--muted);margin-bottom:7px}'+
+    '.subs-group-v127{margin-top:7px}.subs-group-v127>strong{display:block;font-size:9px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}.subs-grid-v127{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}'+
+    '.sub-player-v127{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;align-items:center;border:1px solid var(--line);border-radius:8px;background:#0b1711;color:var(--text);padding:6px 7px;font-size:9px;text-align:left;cursor:pointer;min-width:0}.sub-player-v127 span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sub-player-v127 small{color:var(--muted);font-size:8px}.sub-player-v127:hover{background:#14261c}.sub-player-v127.selected{border-color:#76c78d;background:#173623;box-shadow:inset 0 0 0 1px #76c78d44}.sub-player-v127:disabled{opacity:.45;cursor:not-allowed}.sub-player-v127.bench{background:#101b15}.sub-player-v127.bench.ready{border-color:#5f8f6d;background:#142a1c}'+
+    '.sub-selection-v127{margin-top:7px;padding:6px 7px;border-radius:8px;background:#102019;border:1px solid var(--line);font-size:9px}.sub-selection-v127 strong{color:#9ee0b1}'+
+    '.commentary{height:330px!important;padding:8px!important}.commentary .event{font-size:12px!important;line-height:1.4;padding:8px 9px!important}.commentary .event:first-child{font-size:13px!important;background:#102219;border-radius:7px;border-bottom-color:#294235!important}.commentary .event.goal:first-child{font-size:14px!important}.commentary:before{content:"RELATO EN DIRECTO";display:block;position:sticky;top:-8px;z-index:3;margin:-8px -8px 7px;padding:6px 8px;background:#07110df2;border-bottom:1px solid var(--line);font-size:9px;font-weight:950;color:var(--muted);letter-spacing:.05em}'+
+    '.key-events-v126{max-height:230px!important}.key-event-v126{font-size:11px!important}.key-event-v126.goal{font-size:12px!important}'+
+    '@media(min-width:951px){.match-shell{grid-template-columns:minmax(0,1fr) 300px!important}.subs-grid-v127{grid-template-columns:repeat(2,minmax(0,1fr))}}'+
+    '@media(max-width:950px){.commentary{height:270px!important}.subs-grid-v127{grid-template-columns:repeat(3,minmax(0,1fr))}}'+
+    '@media(max-width:600px){.mental-bar-v127{grid-template-columns:repeat(2,1fr)}.subs-grid-v127{grid-template-columns:repeat(2,minmax(0,1fr))}.pitch-name-v127{font-size:6px;max-width:54px}.pitch-shirt-v127{width:15px;height:15px}.commentary{height:245px!important}}';
+  document.head.appendChild(style);
+
+  function uiV127(M){
+    M.uiV127=M.uiV127||{selectedOut:null};
+    return M.uiV127;
+  }
+  function shortPlayerNameV127(name){
+    const a=String(name||'Jugador').trim().split(/\s+/);
+    if(a.length===1)return a[0];
+    return a[a.length-1].length>=3?a[a.length-1]:(a[0]+' '+a[a.length-1]);
+  }
+  function pitchSlotsV127(side){
+    const us=[
+      [7,50,'gk'],[20,18,''],[20,39,''],[20,61,''],[20,82,''],
+      [39,27,''],[39,50,''],[39,73,''],[59,19,''],[59,81,''],[69,50,'']
+    ];
+    const them=us.map(([x,y,g])=>[100-x,y,g]);
+    return side==='us'?us:them;
+  }
+  function selectedXIForClubV127(club,count=11){
+    if(club===S.club)return (S.lineup||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean).slice(0,count);
+    const ps=(S.players||[]).filter(p=>p.club===club&&!p.parentClub&&p.club!=='Retirado');
+    const order={GK:0,CB:1,LB:1,RB:1,LWB:1,RWB:1,CDM:2,CM:2,LM:3,RM:3,CAM:3,LW:4,RW:4,ST:5,CF:5};
+    return ps.slice().sort((a,b)=>{
+      const pa=String(a.positions||'').split(',')[0].trim(),pb=String(b.positions||'').split(',')[0].trim();
+      return (order[pa]??4)-(order[pb]??4)||(b.overall||0)-(a.overall||0);
+    }).slice(0,count);
+  }
+  function fieldPlayersV127(M,side){
+    const players=selectedXIForClubV127(side==='us'?S.club:M.opp);
+    const slots=pitchSlotsV127(side);
+    const bx=Number(M.ballXV95||50),shift=(bx-50)*(side==='us'?.065:.035);
+    return slots.map((sl,i)=>{
+      const p=players[i],left=clamp(sl[0]+shift,4,96);
+      return '<div class="pitch-player-v127 '+side+' '+sl[2]+'" style="left:'+left+'%;top:'+sl[1]+'%"><span class="pitch-shirt-v127">'+(i+1)+'</span><span class="pitch-name-v127">'+esc(shortPlayerNameV127(p?.name||(side==='us'?S.club:M.opp)))+'</span></div>';
+    }).join('');
+  }
+  function upgradeFieldV127(M){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');if(!pitch)return;
+    pitch.querySelectorAll('.pitch-player-v126,.pitch-player-v127,.pitch-corner-v127,.pitch-arc-v127').forEach(x=>x.remove());
+    pitch.insertAdjacentHTML('beforeend',
+      '<span class="pitch-corner-v127 tl"></span><span class="pitch-corner-v127 tr"></span><span class="pitch-corner-v127 bl"></span><span class="pitch-corner-v127 br"></span>'+
+      '<span class="pitch-arc-v127 left"></span><span class="pitch-arc-v127 right"></span>'+
+      fieldPlayersV127(M,'us')+fieldPlayersV127(M,'them')
+    );
+  }
+  function mentalityHTMLV127(){
+    const items=[['Defensiva','🛡️'],['Equilibrada','⚖️'],['Ofensiva','⚔️'],['Presión alta','🔥']];
+    return '<div class="mental-label-v127">Mentalidad durante el partido</div><div class="mental-bar-v127">'+items.map(([m,icon])=>'<button class="mental-btn-v127 '+(S.mentality===m?'active':'')+'" data-ment="'+esc(m)+'">'+icon+' '+esc(m)+'</button>').join('')+'</div>';
+  }
+  function installMentalityV127(M){
+    const actions=els.matchBox.querySelector('.match-actions');if(!actions)return;
+    const select=actions.querySelector('#liveMent');if(select)select.style.display='none';
+    const score=actions.closest('.scoreboard')||actions.parentElement;
+    if(!score.querySelector('.mental-bar-v127'))actions.insertAdjacentHTML('beforebegin',mentalityHTMLV127());
+    score.querySelectorAll('.mental-btn-v127').forEach(b=>b.onclick=()=>{
+      if(M.done)return;
+      const next=b.dataset.ment;if(!next||next===S.mentality)return;
+      S.mentality=next;
+      M.events.push({text:'🧠 '+M.minute+"' Cambio táctico: "+S.club+' pasa a '+next.toLowerCase()+'.',side:'us'});
+      score.querySelectorAll('.mental-btn-v127').forEach(x=>x.classList.toggle('active',x.dataset.ment===next));
+      save();
+    });
+  }
+  function subsHTMLV127(M){
+    const u=uiV127(M);
+    const on=(S.lineup||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+    const bench=(S.bench||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+    const selected=on.find(p=>String(p.id)===String(u.selectedOut));
+    return '<div class="subs-title-v127"><h3>🔁 Cambios · '+M.subs+'/5</h3><span class="spacer"></span><span class="badge">'+(5-M.subs)+' restantes</span></div>'+
+      '<div class="subs-help-v127">Pulsa primero el jugador que quieres quitar y después el suplente que quieres meter.</div>'+
+      '<div class="subs-group-v127"><strong>En el campo</strong><div class="subs-grid-v127">'+on.map(p=>'<button class="sub-player-v127 sub-out-v127 '+(String(u.selectedOut)===String(p.id)?'selected':'')+'" data-id="'+esc(String(p.id))+'" '+(M.subs>=5||M.done?'disabled':'')+'><span>'+esc(p.name)+'</span><small>'+esc(String(p.positions||'').split(',')[0])+' · '+Math.round(p.fitness||100)+'%</small></button>').join('')+'</div></div>'+
+      '<div class="subs-group-v127"><strong>Banquillo</strong><div class="subs-grid-v127">'+bench.map(p=>'<button class="sub-player-v127 bench sub-in-v127 '+(selected?'ready':'')+'" data-id="'+esc(String(p.id))+'" '+(M.subs>=5||M.done?'disabled':'')+'><span>'+esc(p.name)+'</span><small>'+esc(String(p.positions||'').split(',')[0])+' · '+p.overall+'</small></button>').join('')+'</div></div>'+
+      '<div class="sub-selection-v127">'+(selected?'Sale <strong>'+esc(selected.name)+'</strong> · ahora elige quién entra.':'Selecciona un titular para preparar el cambio.')+'</div>';
+  }
+  function installSubsV127(M){
+    const cards=[...els.matchBox.querySelectorAll('.card')];
+    const card=cards.find(c=>/^Cambios\b/.test(c.querySelector('h3')?.textContent?.trim()||''));
+    if(!card)return;
+    card.classList.add('subs-panel-v127');
+    card.innerHTML=subsHTMLV127(M);
+    card.querySelectorAll('.sub-out-v127').forEach(b=>b.onclick=()=>{
+      const u=uiV127(M);
+      u.selectedOut=String(u.selectedOut)===String(b.dataset.id)?null:b.dataset.id;
+      installSubsV127(M);
+    });
+    card.querySelectorAll('.sub-in-v127').forEach(b=>b.onclick=()=>{
+      const u=uiV127(M);
+      if(!u.selectedOut){toast('Primero elige quién sale');return}
+      const out=S.players.find(p=>String(p.id)===String(u.selectedOut));
+      const inn=S.players.find(p=>String(p.id)===String(b.dataset.id));
+      if(!out||!inn)return;
+      const outId=out.id,inId=inn.id;
+      u.selectedOut=null;
+      applySub(M,outId,inId);
+    });
+  }
+
+  const renderMatchV127Base=renderMatch;
+  renderMatch=function(M){
+    renderMatchV127Base(M);
+    if(!M)return;
+    upgradeFieldV127(M);
+    installMentalityV127(M);
+    installSubsV127(M);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
