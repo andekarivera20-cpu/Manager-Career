@@ -12643,6 +12643,213 @@ loadDB=async function(){
 })();
 
 
+
+// ===== FORCED INJURY SUBSTITUTIONS 10.41 =====
+// Una lesión durante el partido detiene el reloj y obliga a sustituir al jugador.
+// Si no quedan cambios o suplentes, el lesionado abandona el campo y se juega con 10.
+(function(){
+  const simulateBaseV141=simulateChance;
+  const applySubBaseV141=applySub;
+  const advanceBaseV141=advanceMatch;
+  const startAutoBaseV141=window.startAutoV95;
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.forced-injury-v141{margin:8px 0;padding:11px;border-radius:12px;border:1px solid #9a4949;background:linear-gradient(180deg,#351616,#261010);box-shadow:0 8px 22px #0007}'+
+    '.forced-injury-head-v141{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.forced-injury-head-v141 strong{font-size:13px;color:#ffd1d1}.forced-injury-head-v141 .injury-stop-v141{margin-left:auto;padding:3px 7px;border-radius:999px;background:#6f2929;color:#ffd8d8;font-size:8px;font-weight:950;letter-spacing:.04em}'+
+    '.forced-injury-v141 p{margin:6px 0 8px;font-size:10px;color:#e7caca}.forced-bench-v141{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.forced-bench-v141 button{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;align-items:center;min-width:0;border:1px solid #684343;background:#17120f;color:var(--text);border-radius:8px;padding:7px 8px;font-size:9px;text-align:left;cursor:pointer}.forced-bench-v141 button:hover{background:#251714;border-color:#a66363}.forced-bench-v141 button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.forced-bench-v141 button small{font-size:8px;color:var(--muted)}'+
+    '.forced-no-subs-v141{padding:8px;border-radius:8px;background:#241c13;border:1px solid #6f5b3a;color:#f0d9ae;font-size:10px;font-weight:800}.forced-injury-lock-v141 .mental-btn-v127,.forced-injury-lock-v141 .speed-btn-v128,.forced-injury-lock-v141 #step5,.forced-injury-lock-v141 #toHT,.forced-injury-lock-v141 #finishMatch{opacity:.42!important;pointer-events:none!important}'+
+    '@media(max-width:700px){.forced-bench-v141{grid-template-columns:repeat(2,minmax(0,1fr))}}'+
+    '@media(max-width:430px){.forced-bench-v141{grid-template-columns:1fr}}';
+  document.head.appendChild(style);
+
+  function playerV141(id){
+    return S.players.find(p=>String(p.id)===String(id));
+  }
+  function benchAvailableV141(){
+    return (S.bench||[]).map(playerV141).filter(p=>p&&!p.matchInjured&&!isUnavailable(p));
+  }
+  function currentForcedV141(M){
+    const f=M?.forcedInjuryV141;
+    if(!f||!f.pending)return null;
+    const p=playerV141(f.outId);
+    if(!p||!(S.lineup||[]).some(id=>String(id)===String(f.outId))){
+      f.pending=false;
+      return null;
+    }
+    return f;
+  }
+  function stopForInjuryV141(M,p){
+    if(!M||!p||M.done)return;
+    const existing=currentForcedV141(M);
+    if(existing)return;
+    M.forcedInjuryV141={
+      pending:true,
+      outId:p.id,
+      minute:M.minute,
+      type:p.injuredType||'Lesión',
+      detectedAt:Date.now()
+    };
+    M.events.push({
+      text:'🚑 '+M.minute+"' "+p.name+' no puede continuar. Cambio obligatorio.',
+      cls:'carde',
+      side:'us'
+    });
+    try{window.stopAutoV95?.(M)}catch(e){}
+    M.autoRunningV95=false;
+  }
+  function detectNewInjuryV141(M,before){
+    for(const id of (S.lineup||[])){
+      const p=playerV141(id);
+      if(!p)continue;
+      const was=before.get(String(id))||false;
+      if(!was&&p.matchInjured){
+        stopForInjuryV141(M,p);
+        return p;
+      }
+    }
+    return null;
+  }
+
+  simulateChance=function(M){
+    const before=new Map((S.lineup||[]).map(id=>[String(id),!!playerV141(id)?.matchInjured]));
+    simulateBaseV141(M);
+    detectNewInjuryV141(M,before);
+  };
+
+  function playWithTenV141(M){
+    const f=currentForcedV141(M);if(!f)return false;
+    const p=playerV141(f.outId);
+    const idx=(S.lineup||[]).findIndex(id=>String(id)===String(f.outId));
+    if(idx>=0)S.lineup.splice(idx,1);
+    f.pending=false;
+    f.resolved='no_subs';
+    M.events.push({
+      text:'🚑 '+M.minute+"' "+(p?.name||'El lesionado')+' abandona el campo. '+S.club+' seguirá con 10.',
+      cls:'carde',
+      side:'us'
+    });
+    save();
+    renderMatch(M);
+    return true;
+  }
+  function resolveSubV141(M,inId){
+    const f=currentForcedV141(M);if(!f)return;
+    const p=playerV141(f.outId),inn=playerV141(inId);
+    if(!inn)return;
+    f.pending=false;
+    f.resolved='sub';
+    applySubBaseV141(M,f.outId,inn.id);
+    M.events.push({
+      text:'🩺 '+M.minute+"' Cambio obligado por lesión de "+(p?.name||'un jugador')+'.',
+      side:'us'
+    });
+    save();
+    renderMatch(M);
+  }
+
+  applySub=function(M,outId,inId){
+    const f=currentForcedV141(M);
+    if(f&&String(outId)!==String(f.outId)){
+      toast('Primero debes sustituir al jugador lesionado');
+      return;
+    }
+    if(f){
+      resolveSubV141(M,inId);
+      return;
+    }
+    return applySubBaseV141(M,outId,inId);
+  };
+
+  // Cualquier avance normal o rápido se detiene en cuanto aparece una lesión.
+  advanceMatch=function(M,mins){
+    if(!M||M.done)return advanceBaseV141(M,mins);
+    if(currentForcedV141(M)){
+      try{window.stopAutoV95?.(M)}catch(e){}
+      renderMatch(M);
+      return;
+    }
+    const total=Math.max(1,Math.floor(Number(mins)||1));
+    if(total===1)return advanceBaseV141(M,1);
+
+    let left=total;
+    while(left>0&&!M.done&&!currentForcedV141(M)){
+      advanceBaseV141(M,1);
+      left--;
+    }
+  };
+
+  window.startAutoV95=function(M){
+    if(currentForcedV141(M)){
+      try{window.stopAutoV95?.(M)}catch(e){}
+      renderMatch(M);
+      return;
+    }
+    return typeof startAutoBaseV141==='function'?startAutoBaseV141(M):undefined;
+  };
+
+  function forcedBoxHTMLV141(M){
+    const f=currentForcedV141(M);if(!f)return'';
+    const p=playerV141(f.outId);
+    const available=benchAvailableV141();
+    const canSub=(M.subs||0)<5&&available.length>0;
+    return '<div class="forced-injury-v141">'+
+      '<div class="forced-injury-head-v141"><span style="font-size:18px">🚑</span><strong>'+esc(p?.name||'Jugador lesionado')+' no puede continuar</strong><span class="injury-stop-v141">PARTIDO DETENIDO</span></div>'+
+      '<p>'+(esc(p?.injuredType||f.type||'Lesión'))+' · minuto '+M.minute+"'. "+(canSub?'Elige ahora quién entra. No puedes continuar el partido hasta hacer el cambio.':'No quedan cambios o suplentes disponibles.')+'</p>'+
+      (canSub
+        ?'<div class="forced-bench-v141">'+available.map(b=>'<button type="button" class="forced-in-v141" data-id="'+esc(String(b.id))+'"><span>'+esc(b.name)+'</span><small>'+esc(String(b.positions||'').split(',')[0])+' · '+Math.round(b.fitness||100)+'%</small></button>').join('')+'</div>'
+        :'<div class="forced-no-subs-v141">⚠️ No puedes sustituirlo. Pulsa “Continuar con 10” para retirar al lesionado y seguir el partido.</div><button type="button" class="btn warn continue-ten-v141" style="margin-top:7px">Continuar con 10</button>')+
+    '</div>';
+  }
+  function installForcedUIV141(M){
+    const f=currentForcedV141(M);
+    els.matchBox.classList.toggle('forced-injury-lock-v141',!!f);
+    els.matchBox.querySelectorAll('.forced-injury-v141').forEach(x=>x.remove());
+    if(!f)return;
+
+    const score=els.matchBox.querySelector('.scoreboard')||els.matchBox.firstElementChild;
+    if(score)score.insertAdjacentHTML('afterend',forcedBoxHTMLV141(M));
+    else els.matchBox.insertAdjacentHTML('afterbegin',forcedBoxHTMLV141(M));
+
+    els.matchBox.querySelectorAll('.forced-in-v141').forEach(b=>b.onclick=()=>resolveSubV141(M,b.dataset.id));
+    const ten=els.matchBox.querySelector('.continue-ten-v141');
+    if(ten)ten.onclick=()=>playWithTenV141(M);
+
+    // El resto de controles queda bloqueado visual y funcionalmente.
+    els.matchBox.querySelectorAll('#step5,#toHT,#finishMatch,.mental-btn-v127,.speed-btn-v128').forEach(b=>{
+      b.disabled=true;
+      b.setAttribute('aria-disabled','true');
+    });
+  }
+
+  // Sustituimos "Finalizar partido": avanza rápido, pero se corta si surge una lesión.
+  function bindSafeFinishV141(M){
+    const end=els.matchBox.querySelector('#finishMatch');
+    if(!end||M.done)return;
+    if(currentForcedV141(M)){end.disabled=true;return}
+    end.disabled=false;
+    end.onclick=()=>{
+      try{window.stopAutoV95?.(M)}catch(e){}
+      M.pendingDecisionV107=null;
+      M.secondHalfV95=true;
+      while(!M.done&&M.minute<90&&!currentForcedV141(M)){
+        try{window.prepareMinuteV95?.(M)}catch(e){}
+        advanceMatch(M,Math.min(5,90-M.minute));
+      }
+      if(currentForcedV141(M))renderMatch(M);
+    };
+  }
+
+  const renderBaseV141=renderMatch;
+  renderMatch=function(M){
+    renderBaseV141(M);
+    if(!M)return;
+    installForcedUIV141(M);
+    bindSafeFinishV141(M);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
