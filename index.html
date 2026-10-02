@@ -11305,6 +11305,156 @@ loadDB=async function(){
 })();
 
 
+
+// ===== CONTINUOUS 2D MOTION 10.34 =====
+// Interpolación real cuadro a cuadro. Los nodos nuevos nacen en la posición
+// anterior antes del primer paint y viajan hasta el nuevo destino durante casi
+// todo el intervalo del reloj. Reduce drásticamente el efecto de teletransporte.
+(function(){
+  let animTokenV134=0;
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.flow-card-v95:not(.view3d-v132) .pitch-player-v129,.flow-card-v95:not(.view3d-v132) .flow-ball-v95{transition:none!important}'+
+    '.smooth-status-v133{display:none!important}.continuous-status-v134{font-size:8px;color:#8fa397;text-align:center;margin-top:3px;opacity:.82}';
+  document.head.appendChild(style);
+
+  function pointV134(el){
+    if(!el)return null;
+    const x=parseFloat(el.style.left),y=parseFloat(el.style.top);
+    return Number.isFinite(x)&&Number.isFinite(y)?{x,y}:null;
+  }
+  function snapV134(){
+    const pitch=els.matchBox?.querySelector('.flow-pitch-v95');
+    if(!pitch)return null;
+    return{
+      us:[...pitch.querySelectorAll('.pitch-player-v129.us')].map(pointV134),
+      them:[...pitch.querySelectorAll('.pitch-player-v129.them')].map(pointV134),
+      ball:pointV134(pitch.querySelector('.flow-ball-v95'))
+    };
+  }
+  function periodV134(M){
+    const speed=Number(M?.uiV128?.speed||1);
+    if(speed<=.5)return 1360;
+    if(speed<=1)return 665;
+    if(speed<=2)return 325;
+    return 150;
+  }
+  function easeV134(t){
+    return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+  }
+  function lerpV134(a,b,t){return a+(b-a)*t}
+
+  function prepareNodesV134(prev){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');
+    if(!pitch||!prev)return null;
+    const card=pitch.closest('.flow-card-v95');
+    if(card?.classList.contains('view3d-v132'))return null;
+
+    const us=[...pitch.querySelectorAll('.pitch-player-v129.us')];
+    const them=[...pitch.querySelectorAll('.pitch-player-v129.them')];
+    const ball=pitch.querySelector('.flow-ball-v95');
+
+    const targets={
+      us:us.map(pointV134),
+      them:them.map(pointV134),
+      ball:pointV134(ball)
+    };
+
+    us.forEach((el,i)=>{
+      const p=prev.us?.[i],t=targets.us[i];
+      if(p&&t){el.style.left=p.x+'%';el.style.top=p.y+'%'}
+    });
+    them.forEach((el,i)=>{
+      const p=prev.them?.[i],t=targets.them[i];
+      if(p&&t){el.style.left=p.x+'%';el.style.top=p.y+'%'}
+    });
+    if(ball&&prev.ball&&targets.ball){
+      ball.style.left=prev.ball.x+'%';
+      ball.style.top=prev.ball.y+'%';
+    }
+    return{pitch,us,them,ball,targets};
+  }
+
+  function animateV134(M,prev){
+    const prepared=prepareNodesV134(prev);
+    if(!prepared)return;
+    const {us,them,ball,targets}=prepared;
+    const token=++animTokenV134;
+    const duration=periodV134(M);
+    let start=null;
+
+    const tick=now=>{
+      if(token!==animTokenV134)return;
+      if(!start)start=now;
+      const raw=clamp((now-start)/duration,0,1);
+      const t=easeV134(raw);
+
+      us.forEach((el,i)=>{
+        const a=prev.us?.[i],b=targets.us[i];
+        if(!a||!b||!el.isConnected)return;
+        const dx=b.x-a.x,dy=b.y-a.y;
+        // Pequeña curva orgánica en desplazamientos largos.
+        const curve=Math.sin(Math.PI*t)*Math.sign(dy||1)*Math.min(1.25,Math.abs(dx)*.025);
+        el.style.left=lerpV134(a.x,b.x,t).toFixed(3)+'%';
+        el.style.top=(lerpV134(a.y,b.y,t)+curve).toFixed(3)+'%';
+      });
+      them.forEach((el,i)=>{
+        const a=prev.them?.[i],b=targets.them[i];
+        if(!a||!b||!el.isConnected)return;
+        const dx=b.x-a.x,dy=b.y-a.y;
+        const curve=-Math.sin(Math.PI*t)*Math.sign(dy||1)*Math.min(1.15,Math.abs(dx)*.022);
+        el.style.left=lerpV134(a.x,b.x,t).toFixed(3)+'%';
+        el.style.top=(lerpV134(a.y,b.y,t)+curve).toFixed(3)+'%';
+      });
+
+      if(ball&&prev.ball&&targets.ball&&ball.isConnected){
+        const a=prev.ball,b=targets.ball;
+        const dist=Math.hypot(b.x-a.x,(b.y-a.y)*.7);
+        // Pases largos/remates describen una curva suave, no una diagonal robótica.
+        const arc=Math.sin(Math.PI*t)*Math.min(3.8,dist*.075);
+        ball.style.left=lerpV134(a.x,b.x,t).toFixed(3)+'%';
+        ball.style.top=(lerpV134(a.y,b.y,t)-arc).toFixed(3)+'%';
+      }
+
+      if(raw<1)requestAnimationFrame(tick);
+      else{
+        us.forEach((el,i)=>{const b=targets.us[i];if(b&&el.isConnected){el.style.left=b.x+'%';el.style.top=b.y+'%'}});
+        them.forEach((el,i)=>{const b=targets.them[i];if(b&&el.isConnected){el.style.left=b.x+'%';el.style.top=b.y+'%'}});
+        if(ball&&targets.ball&&ball.isConnected){ball.style.left=targets.ball.x+'%';ball.style.top=targets.ball.y+'%'}
+      }
+    };
+
+    // Doble RAF: garantiza que la posición anterior se pinte antes de empezar a viajar.
+    requestAnimationFrame(()=>requestAnimationFrame(tick));
+  }
+
+  function enforce2DV134(M){
+    S.matchViewV132='2d';
+    if(M){
+      M.uiV132=M.uiV132||{};
+      M.uiV132.view='2d';
+    }
+  }
+  function badgeV134(){
+    const score=els.matchBox.querySelector('.scoreboard');
+    if(!score||score.querySelector('.continuous-status-v134'))return;
+    const toggle=score.querySelector('.view-toggle-v132');
+    if(toggle)toggle.insertAdjacentHTML('afterend','<div class="continuous-status-v134">Movimiento continuo 2D</div>');
+  }
+
+  const renderBaseV134=renderMatch;
+  renderMatch=function(M){
+    const prev=snapV134();
+    enforce2DV134(M);
+    renderBaseV134(M);
+    if(!M)return;
+    animateV134(M,prev);
+    badgeV134();
+  };
+})();
+
+
 loadDB();
 })();
 </script>
