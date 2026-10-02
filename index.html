@@ -12144,6 +12144,192 @@ loadDB=async function(){
 })();
 
 
+
+// ===== MATCH VISUAL HOTFIX 10.38 =====
+// Corrige tres problemas visibles: descanso bloqueado, equipaciones pisadas por
+// los colores genéricos azul/rojo y delanteros demasiado adelantados.
+(function(){
+  const EXACT_KITS_V138={
+    'Athletic Club':{pattern:'stripes',kit1:'#d71920',kit2:'#ffffff',text:'#111111'},
+    'Athletic Club de Bilbao':{pattern:'stripes',kit1:'#d71920',kit2:'#ffffff',text:'#111111'},
+    'SC Freiburg':{pattern:'solid',kit1:'#d71920',kit2:'#111111',text:'#ffffff'},
+    'Atlético Madrid':{pattern:'stripes',kit1:'#d71920',kit2:'#ffffff',text:'#163b65'},
+    'FC Barcelona':{pattern:'stripes',kit1:'#004d98',kit2:'#a50044',text:'#f4cf45'},
+    'Real Madrid':{pattern:'solid',kit1:'#f5f5f5',kit2:'#f5f5f5',text:'#111111'},
+    'Real Sociedad':{pattern:'stripes',kit1:'#176fbd',kit2:'#ffffff',text:'#111111'},
+    'CA Osasuna':{pattern:'solid',kit1:'#c9152b',kit2:'#c9152b',text:'#ffffff'},
+    'Real Betis Balompié':{pattern:'stripes',kit1:'#159447',kit2:'#ffffff',text:'#111111'},
+    'Villarreal CF':{pattern:'solid',kit1:'#f4df27',kit2:'#f4df27',text:'#111111'},
+    'Sevilla FC':{pattern:'solid',kit1:'#ffffff',kit2:'#ffffff',text:'#111111'},
+    'Arsenal FC':{pattern:'solid',kit1:'#d71920',kit2:'#ffffff',text:'#ffffff'},
+    'Liverpool FC':{pattern:'solid',kit1:'#c8102e',kit2:'#c8102e',text:'#ffffff'},
+    'Manchester City':{pattern:'solid',kit1:'#6cabdd',kit2:'#6cabdd',text:'#102a43'},
+    'Manchester United':{pattern:'solid',kit1:'#da291c',kit2:'#da291c',text:'#ffffff'},
+    'Chelsea FC':{pattern:'solid',kit1:'#034694',kit2:'#034694',text:'#ffffff'},
+    'Bayern München':{pattern:'solid',kit1:'#dc052d',kit2:'#dc052d',text:'#ffffff'},
+    'Borussia Dortmund':{pattern:'solid',kit1:'#fde100',kit2:'#fde100',text:'#111111'},
+    'Bayer 04 Leverkusen':{pattern:'stripes',kit1:'#d71920',kit2:'#191919',text:'#ffffff'},
+    'Juventus FC':{pattern:'stripes',kit1:'#111111',kit2:'#ffffff',text:'#111111'},
+    'Inter Milan':{pattern:'stripes',kit1:'#0050a4',kit2:'#111111',text:'#ffffff'},
+    'AC Milan':{pattern:'stripes',kit1:'#d71920',kit2:'#111111',text:'#ffffff'},
+    'Paris Saint-Germain':{pattern:'solid',kit1:'#004170',kit2:'#004170',text:'#ffffff'},
+    'Ajax':{pattern:'solid',kit1:'#ffffff',kit2:'#d71920',text:'#111111'},
+    'SL Benfica':{pattern:'solid',kit1:'#e30613',kit2:'#e30613',text:'#ffffff'},
+    'FC Porto':{pattern:'stripes',kit1:'#005aa6',kit2:'#ffffff',text:'#111111'},
+    'Sporting CP':{pattern:'hoops',kit1:'#168a45',kit2:'#ffffff',text:'#111111'}
+  };
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.flow-pitch-v95 .pitch-player-v129 .shirt{background:var(--kit-final-v138,#777)!important;color:var(--kit-text-v138,#fff)!important}'+
+    '.flow-pitch-v95 .pitch-player-v129.gk .shirt{background:var(--gk-final-v138,#e2ad22)!important;color:#111!important}'+
+    '.halftime-live-v138{margin-top:5px;padding:5px 8px;border:1px solid #6c5c32;border-radius:7px;background:#27210f;color:#ffe1a0;text-align:center;font-size:9px;font-weight:900}'+
+    '.live-ratings-v136{display:block!important}';
+  document.head.appendChild(style);
+
+  function bgV138(p){
+    if(!p)return'#777';
+    const a=p.kit1||'#777',b=p.kit2||a;
+    if(p.pattern==='stripes')return'repeating-linear-gradient(90deg,'+a+' 0 3px,'+b+' 3px 6px)';
+    if(p.pattern==='hoops')return'repeating-linear-gradient(180deg,'+a+' 0 3px,'+b+' 3px 6px)';
+    if(p.pattern==='half')return'linear-gradient(90deg,'+a+' 0 50%,'+b+' 50% 100%)';
+    if(p.pattern==='sash')return'linear-gradient(135deg,'+a+' 0 39%,'+b+' 40% 60%,'+a+' 61% 100%)';
+    return a;
+  }
+  function homeKitV138(club){
+    return EXACT_KITS_V138[club]||clubKitV8(club)?.home||{pattern:'solid',kit1:'#777',kit2:'#777',text:'#fff'};
+  }
+  function awayKitV138(club){
+    return clubKitV8(club)?.away||{pattern:'solid',kit1:'#e9e9e9',kit2:'#e9e9e9',text:'#111'};
+  }
+  function sameFamilyV138(a,b){
+    if(!a||!b)return false;
+    return kitsClashV8(a,b);
+  }
+  function paintFinalKitsV138(M){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');if(!pitch)return;
+    // El club del usuario SIEMPRE sale con su primera equipación: evita casos como
+    // Athletic azul cuando el rival viste de rojo. Si hay choque, cambia el rival.
+    const us=homeKitV138(S.club);
+    const oppHome=homeKitV138(M.opp);
+    const them=sameFamilyV138(us,oppHome)?awayKitV138(M.opp):oppHome;
+
+    const paint=(side,pal,gk)=>{
+      pitch.querySelectorAll('.pitch-player-v129.'+side).forEach(el=>{
+        const sh=el.querySelector('.shirt');if(!sh)return;
+        if(el.classList.contains('gk')){
+          sh.style.setProperty('background',gk,'important');
+          sh.style.setProperty('--gk-final-v138',gk);
+          sh.style.setProperty('color','#111','important');
+        }else{
+          const bg=bgV138(pal);
+          sh.style.setProperty('background',bg,'important');
+          sh.style.setProperty('--kit-final-v138',bg);
+          sh.style.setProperty('color',pal.text||'#fff','important');
+          sh.style.setProperty('--kit-text-v138',pal.text||'#fff');
+        }
+      });
+    };
+    paint('us',us,'#e2ad22');
+    paint('them',them,'#58a96d');
+
+    // Actualiza también la pequeña leyenda si existe.
+    const legend=pitch.closest('.flow-card-v95')?.querySelector('.kit-legend-v137');
+    if(legend){
+      const sw=legend.querySelectorAll('.kit-swatch-v137');
+      const homeClub=M.fixture.home,awayClub=M.fixture.away;
+      const homePal=homeClub===S.club?us:(homeClub===M.opp?them:homeKitV138(homeClub));
+      const awayPal=awayClub===S.club?us:(awayClub===M.opp?them:homeKitV138(awayClub));
+      if(sw[0])sw[0].style.setProperty('--swatch-v137',bgV138(homePal));
+      if(sw[1])sw[1].style.setProperty('--swatch-v137',bgV138(awayPal));
+    }
+  }
+
+  function formationV138(side,M){
+    const name=side==='us'?S.formation:(M.oppFormationV129||'4-2-3-1');
+    return FORMATIONS[name]||FORMATIONS['4-3-3'];
+  }
+  function roleV138(pos){
+    if(/ST|CF|LW|RW|CAM/.test(String(pos||'')))return'ATT';
+    if(/CB|LB|RB|LWB|RWB/.test(String(pos||'')))return'DEF';
+    return'OTHER';
+  }
+  function strictForwardLinesV138(M){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');if(!pitch)return;
+    const st=M.livePlayV129||{},type=st.type||'open';
+    if(type!=='open')return;
+
+    const us=[...pitch.querySelectorAll('.pitch-player-v129.us')];
+    const them=[...pitch.querySelectorAll('.pitch-player-v129.them')];
+    const uf=formationV138('us',M),tf=formationV138('them',M);
+
+    const usDef=us.map((el,i)=>({x:parseFloat(el.style.left),pos:uf[i]?.p}))
+      .filter(x=>roleV138(x.pos)==='DEF'&&Number.isFinite(x.x)).map(x=>x.x);
+    const themDef=them.map((el,i)=>({x:parseFloat(el.style.left),pos:tf[i]?.p}))
+      .filter(x=>roleV138(x.pos)==='DEF'&&Number.isFinite(x.x)).map(x=>x.x);
+    if(!usDef.length||!themDef.length)return;
+
+    // Segunda línea aproximada: mediana de los cuatro defensas. Dejamos 1.5% de margen.
+    usDef.sort((a,b)=>a-b);themDef.sort((a,b)=>a-b);
+    const usLine=(usDef[1]+usDef[2])/2;
+    const themLine=(themDef[1]+themDef[2])/2;
+
+    us.forEach((el,i)=>{
+      if(roleV138(uf[i]?.p)!=='ATT')return;
+      const x=parseFloat(el.style.left);
+      const cap=themLine-1.5;
+      if(Number.isFinite(x)&&x>cap)el.style.left=clamp(cap,8,92).toFixed(2)+'%';
+    });
+    them.forEach((el,i)=>{
+      if(roleV138(tf[i]?.p)!=='ATT')return;
+      const x=parseFloat(el.style.left);
+      const cap=usLine+1.5;
+      if(Number.isFinite(x)&&x<cap)el.style.left=clamp(cap,8,92).toFixed(2)+'%';
+    });
+  }
+
+  function ensureHalftimeV138(M){
+    if(!M||M.done||M.minute!==45||M.secondHalfV95||M.halftimeAutoV138)return;
+    M.halftimeAutoV138=true;
+    const score=els.matchBox.querySelector('.scoreboard');
+    if(score&&!score.querySelector('.halftime-live-v138')){
+      score.insertAdjacentHTML('beforeend','<div class="halftime-live-v138">⏸ Descanso · la 2ª parte comienza automáticamente…</div>');
+    }
+    const speed=Number(M.uiV128?.speed||1);
+    const wait=speed<=.5?1500:speed<=1?950:speed<=2?600:350;
+    setTimeout(()=>{
+      if(M.done||M.secondHalfV95)return;
+      // Si el modal ya no está abierto no relanzamos un partido invisible.
+      if(els.matchModal?.classList.contains('hidden'))return;
+      M.secondHalfV95=true;
+      M.events.push({text:"▶ 46' Comienza la segunda parte.",side:'us'});
+      const note=els.matchBox.querySelector('.halftime-live-v138');if(note)note.remove();
+      try{window.startAutoV95(M)}catch(e){}
+      try{renderMatch(M)}catch(e){}
+    },wait);
+  }
+
+  function ensureRatingsVisibleV138(){
+    const card=els.matchBox.querySelector('.live-ratings-v136');
+    if(card){
+      card.style.display='block';
+      card.style.visibility='visible';
+      card.style.opacity='1';
+    }
+  }
+
+  const renderBaseV138=renderMatch;
+  renderMatch=function(M){
+    renderBaseV138(M);
+    if(!M)return;
+    paintFinalKitsV138(M);
+    strictForwardLinesV138(M);
+    ensureRatingsVisibleV138();
+    ensureHalftimeV138(M);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
