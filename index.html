@@ -10756,8 +10756,8 @@ loadDB=async function(){
     pitch.querySelectorAll('.pitch-player-v127,.pitch-player-v129,.play-state-v129,.ball-owner-v129,.restart-line-v129,.restart-arrow-v129').forEach(x=>x.remove());
     const ball=pitch.querySelector('.flow-ball-v95');
     if(ball){
-      ball.style.left=Number(st.x??M.ballXV95||50).toFixed(1)+'%';
-      ball.style.top=Number(st.y??M.ballYV95||50).toFixed(1)+'%';
+      ball.style.left=Number(st.x ?? (M.ballXV95 || 50)).toFixed(1)+'%';
+      ball.style.top=Number(st.y ?? (M.ballYV95 || 50)).toFixed(1)+'%';
       ball.classList.toggle('in-goal-v129',st.type==='goal');
       ball.classList.toggle('dead-ball-v129',st.type!=='open'&&st.type!=='shot'&&st.type!=='goal');
     }
