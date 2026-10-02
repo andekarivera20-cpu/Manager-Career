@@ -9926,7 +9926,7 @@ loadDB=async function(){
     const side=scoring===S.club?'us':'them';
     const ev=[...(M.events||[])].reverse().find(e=>e&&e.cls==='goal');
     u.goalSide=side;
-    u.goalText=(side==='us'?'⚽ ¡GOOOL! ':'⚽ Gol de '+esc(scoring)+' · ')+(ev?.text?String(ev.text).replace(/^⚽\s*/,''):(x.h+' - '+x.a));
+    u.goalText=(side==='us'?'⚽ ¡GOOOL! ':'⚽ Gol de '+scoring+' · ')+(ev?.text?String(ev.text).replace(/^⚽\s*/,''):(x.h+' - '+x.a));
     u.goalUntil=Date.now()+7000;
     u.lastH=x.h;u.lastA=x.a;
     return true;
@@ -10038,7 +10038,7 @@ loadDB=async function(){
   const renderMatchV126Base=renderMatch;
   renderMatch=function(M){
     const scrollTop=els.matchBox?.scrollTop||0;
-    const userWasDown=scrollTop>24;
+    const userWasDown=scrollTop>0;
     detectGoalV126(M);
     renderMatchV126Base(M);
     if(!M)return;
