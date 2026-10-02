@@ -13366,6 +13366,58 @@ loadDB=async function(){
 })();
 
 
+
+// ===== MATCH MODAL SCROLL FIX 10.44 =====
+// El partido usa el overlay completo como contenedor de scroll. Evita la combinación
+// max-height + overflow interno que recortaba la pantalla y bloqueaba la rueda.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '#matchModal.match-game-v144{display:flex!important;align-items:flex-start!important;justify-content:center!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain!important;padding:12px!important;-webkit-overflow-scrolling:touch}'+
+    '#matchModal.match-game-v144>#matchBox{width:min(1180px,98vw)!important;max-height:none!important;height:auto!important;min-height:0!important;overflow:visible!important;margin:auto 0!important;padding:12px!important;border-radius:14px!important}'+
+    '#matchModal.match-game-v144 #matchBox.match-modal-v126{max-height:none!important;overflow:visible!important}'+
+    '#matchModal.match-game-v144 .match-shell{align-items:start!important;min-height:0!important}'+
+    '#matchModal.match-game-v144 .match-live-grid-v128{min-height:0!important;align-items:start!important}'+
+    '#matchModal.match-game-v144 .match-commentary-v128{max-height:none!important;min-height:0!important}'+
+    '#matchModal.match-game-v144 .match-commentary-v128 .commentary{max-height:300px!important;min-height:180px!important;overflow-y:auto!important}'+
+    '#matchModal.match-game-v144 .flow-card-v95{min-height:0!important}'+
+    '@media(max-width:950px){#matchModal.match-game-v144{padding:6px!important;align-items:flex-start!important}#matchModal.match-game-v144>#matchBox{width:100%!important;max-height:none!important;border-radius:14px!important;margin:6px 0 84px!important;padding:9px!important}#matchModal.match-game-v144 .match-live-grid-v128{grid-template-columns:1fr!important}#matchModal.match-game-v144 .match-commentary-v128 .commentary{max-height:250px!important}}'+
+    '@media(max-width:560px){#matchModal.match-game-v144>#matchBox{margin-bottom:92px!important;padding:7px!important}#matchModal.match-game-v144 .match-commentary-v128 .commentary{max-height:220px!important}}';
+  document.head.appendChild(style);
+
+  const openMatchV144Base=openMatch;
+  openMatch=function(f){
+    els.matchModal.classList.add('match-game-v144');
+    openMatchV144Base(f);
+    // Siempre empezamos arriba, pero a partir de aquí el usuario controla el scroll.
+    requestAnimationFrame(()=>{els.matchModal.scrollTop=0});
+  };
+
+  // Si se cierra el modal, quitamos la clase para no afectar a negociaciones,
+  // eventos pendientes, selector de plantilla, etc.
+  const obs=new MutationObserver(()=>{
+    if(els.matchModal.classList.contains('hidden')){
+      els.matchModal.classList.remove('match-game-v144');
+      els.matchModal.scrollTop=0;
+    }
+  });
+  obs.observe(els.matchModal,{attributes:true,attributeFilter:['class']});
+
+  // El viejo sistema guardaba scrollTop en matchBox. Ahora el scroll real está
+  // en el overlay, así que neutralizamos cualquier posición residual de la caja.
+  const renderMatchV144Base=renderMatch;
+  renderMatch=function(M){
+    const outerScroll=els.matchModal.classList.contains('match-game-v144')?els.matchModal.scrollTop:0;
+    renderMatchV144Base(M);
+    if(!M)return;
+    if(els.matchModal.classList.contains('match-game-v144')){
+      els.matchBox.scrollTop=0;
+      requestAnimationFrame(()=>{els.matchModal.scrollTop=outerScroll});
+    }
+  };
+})();
+
+
 loadDB();
 })();
 </script>
