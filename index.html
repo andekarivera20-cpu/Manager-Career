@@ -9523,6 +9523,355 @@ loadDB=async function(){
 })();
 
 
+
+// ===== TRANSFER RACES 2.0 10.25 =====
+// Competencia real por objetivos: seguimiento -> contacto -> oferta -> elección.
+// Se centra especialmente en jugadores de la shortlist para que el usuario pueda reaccionar.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.race-card-v125{margin-top:12px}.race-list-v125{display:grid;gap:7px;margin-top:9px}'+
+    '.race-row-v125{display:grid;grid-template-columns:minmax(180px,1.15fr) minmax(160px,.9fr) auto;gap:9px;align-items:center;padding:9px;border:1px solid var(--line);border-radius:10px;background:#09150f}'+
+    '.race-clubs-v125{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}.race-club-v125{font-size:9px;padding:3px 6px;border:1px solid var(--line);border-radius:999px}.race-club-v125.bid{color:#ffd08a;border-color:#72542d}.race-club-v125.agreed{color:#8ee8a8;border-color:#315f42}'+
+    '.race-stage-v125{font-size:9px;font-weight:900;padding:4px 7px;border:1px solid var(--line);border-radius:999px;white-space:nowrap}.race-stage-v125.watch{color:#c6d0ca}.race-stage-v125.contact{color:#9ad5ff;border-color:#315a73}.race-stage-v125.bid{color:#ffd08a;border-color:#72542d}.race-stage-v125.hot{color:#ffb39c;border-color:#724336}'+
+    '.race-warning-v125{margin-top:7px;padding:7px 8px;border:1px solid #72542d;border-radius:8px;background:#211b0d;color:#ffd08a;font-size:9px}'+
+    '.race-summary-v125{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:9px}.race-summary-v125>div{padding:8px;border:1px solid var(--line);border-radius:9px;background:#09150f}.race-summary-v125 small{display:block;color:var(--muted);font-size:8px}.race-summary-v125 strong{font-size:16px}'+
+    '@media(max-width:760px){.race-row-v125{grid-template-columns:1fr auto}.race-row-v125>div:nth-child(2){grid-column:1/-1}.race-summary-v125{grid-template-columns:1fr 1fr}}';
+  document.head.appendChild(style);
+
+  function raceStateV125(){
+    S.transferRacesV125=S.transferRacesV125||{races:[],history:[],lastCreate:null,lastProcess:null};
+    S.transferRacesV125.races=S.transferRacesV125.races||[];
+    S.transferRacesV125.history=S.transferRacesV125.history||[];
+    return S.transferRacesV125;
+  }
+  function raceForPlayerV125(id){
+    return raceStateV125().races.find(r=>String(r.playerId)===String(id)&&r.status==='active')||null;
+  }
+  function raceGroupV125(p){
+    const s=String(p?.positions||'');
+    if(s.includes('GK'))return'GK';
+    if(/ST|CF/.test(s))return'ST';
+    if(/CAM|LW|RW|LM|RM/.test(s))return'WIDE';
+    if(/CDM|CM/.test(s))return'MID';
+    return'DEF';
+  }
+  function clubNeedScoreV125(club,p){
+    const ps=(S.players||[]).filter(x=>x.club===club&&!x.parentClub);
+    const g=raceGroupV125(p),same=ps.filter(x=>raceGroupV125(x)===g);
+    const rating=clubRatingDB(club);
+    const best=same.slice().sort((a,b)=>(b.overall||0)-(a.overall||0)).slice(0,g==='GK'?1:2);
+    const q=best.length?best.reduce((a,x)=>a+(x.overall||0),0)/best.length:50;
+    const target=g==='GK'?2:g==='ST'?3:g==='WIDE'?4:g==='MID'?5:7;
+    return Math.max(0,target-same.length)*8+Math.max(0,rating-q)*2;
+  }
+  function candidateClubsV125(p,max=4){
+    const origin=p.club,r=clubRatingDB(origin),value=Math.max(100000,p.value||0);
+    const rows=[];
+    for(const [club] of DB.clubs){
+      if(club===origin||club===S.club)continue;
+      const cr=clubRatingDB(club);
+      if(cr<r-8||cr>r+11)continue;
+      const f=S.clubAIV118?.clubs?.[club];
+      const available=f?Math.max(0,(f.budget||0)-(f.reserved||0)):budgetFor(club);
+      if(available<value*.55)continue;
+      const pf=window.clubBoardProfileV117?.(club)||{ambition:3,youth:3,stars:2,trading:3};
+      let score=clubNeedScoreV125(club,p)+(cr-r)*1.2+pf.ambition*3+Math.random()*10;
+      if(p.age<=23)score+=pf.youth*2;
+      if((p.overall||0)>=82)score+=pf.stars*2;
+      if((p.potential||0)>(p.overall||0)+5&&pf.trading>=4)score+=5;
+      rows.push({club,score});
+    }
+    rows.sort((a,b)=>b.score-a.score);
+    return rows.slice(0,max).map(x=>x.club);
+  }
+  function isUserWatchingV125(p){
+    return (S.shortlist||[]).map(String).includes(String(p.id))||
+      !!S.playerScoutingV123?.assignments?.some(a=>String(a.playerId)===String(p.id)&&a.status==='active');
+  }
+  function notifyRaceV125(r,text,urgent=false){
+    const p=S.players.find(x=>String(x.id)===String(r.playerId));
+    if(!p)return;
+    if(isUserWatchingV125(p)){
+      S.inbox.unshift({date:S.date,text:(urgent?'🚨 ':'🗞️ ')+text});
+      pushDayEventV7(S.date,{type:'rumor',text});
+    }
+  }
+  function createRaceV125(p,forced=false){
+    if(!p||p.club===S.club||p.club==='Retirado'||p.club==='Agente libre'||p.parentClub)return null;
+    if(raceForPlayerV125(p.id))return null;
+    const clubs=candidateClubsV125(p,forced?4:3);
+    if(!clubs.length)return null;
+    const st=raceStateV125(),r={
+      id:'TR'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+      playerId:String(p.id),player:p.name,origin:p.club,created:S.date,lastStep:S.date,
+      status:'active',heat:forced?'hot':'normal',
+      offers:clubs.map((club,i)=>({
+        club,stage:'watch',created:S.date,updated:S.date,fee:0,wage:0,
+        score:0,priority:i===0?3:i===1?2:1
+      }))
+    };
+    st.races.unshift(r);st.races=st.races.slice(0,40);
+    notifyRaceV125(r,clubs[0]+' ha empezado a seguir a '+p.name+'.');
+    return r;
+  }
+  function marketFitV125(p,club,wage){
+    const cr=clubRatingDB(club),origin=clubRatingDB(p.club);
+    const pf=window.clubBoardProfileV117?.(club)||{ambition:3,youth:3,stars:2};
+    let score=48+(cr-origin)*2.4+pf.ambition*2+(wage/Math.max(500,p.wage||1000)-1)*22;
+    if(p.age<=23)score+=pf.youth*1.8;
+    if((p.overall||0)>=82)score+=pf.stars*1.5;
+    if(p.wantsOut)score+=12;
+    if(p.personality==='Ambicioso')score+=(cr-origin)*1.5;
+    if(p.personality==='Leal')score-=7;
+    return score;
+  }
+  function reserveOfferV125(o,fee){
+    const f=S.clubAIV118?.clubs?.[o.club];
+    if(!f)return true;
+    const free=Math.max(0,(f.budget||0)-(f.reserved||0));
+    if(free<fee)return false;
+    f.reserved=(f.reserved||0)+fee;
+    o.reservedV125=fee;
+    return true;
+  }
+  function releaseOfferV125(o){
+    const f=S.clubAIV118?.clubs?.[o.club];
+    if(f&&o.reservedV125)f.reserved=Math.max(0,(f.reserved||0)-o.reservedV125);
+    o.reservedV125=0;
+  }
+  function makeBidV125(r,o,p){
+    if(o.stage==='bid'||o.stage==='agreed')return;
+    const premium=.92+Math.random()*.32+(r.heat==='hot'?.05:0);
+    const fee=Math.max(100000,Math.round((p.value||1000000)*premium/50000)*50000);
+    if(!reserveOfferV125(o,fee)){o.stage='dropped';return}
+    o.fee=fee;
+    o.wage=Math.max(700,Math.round((p.wage||1000)*(1.08+Math.random()*.25)/100)*100);
+    o.stage='bid';o.updated=S.date;
+    notifyRaceV125(r,o.club+' prepara una oferta de '+euro(fee)+' por '+p.name+'.',true);
+    addNews('Competencia de mercado',o.club+' entra en la carrera por '+p.name+' con una oferta cercana a '+euro(fee)+'.','rumor');
+  }
+  function sellerAcceptV125(p,offer){
+    if(p.club==='Agente libre')return true;
+    const ratio=offer.fee/Math.max(1,p.value||1);
+    const pf=window.clubBoardProfileV117?.(p.club)||{trading:3,youth:3,stars:2};
+    let threshold=1.02;
+    if(pf.trading>=4)threshold-=.07;
+    if(p.age>=30)threshold-=.08;
+    if(p.wantsOut)threshold-=.10;
+    if(pf.youth>=4&&p.age<=22&&(p.potential||0)>=84)threshold+=.18;
+    if(pf.stars>=4&&(p.overall||0)>=82)threshold+=.16;
+    return ratio>=threshold||Math.random()<clamp(.18+(ratio-.85)*.8,.05,.78);
+  }
+  function chooseWinningOfferV125(r,p){
+    const bids=r.offers.filter(o=>o.stage==='bid'&&sellerAcceptV125(p,o));
+    if(!bids.length)return null;
+    for(const o of bids)o.score=marketFitV125(p,o.club,o.wage)+Math.random()*10;
+    bids.sort((a,b)=>b.score-a.score);
+    return bids[0];
+  }
+  function completeRaceTransferV125(r,p,winner){
+    const old=p.club;
+    for(const o of r.offers)if(o!==winner)releaseOfferV125(o);
+    const f=S.clubAIV118?.clubs?.[winner.club];
+    if(f){
+      const reserved=winner.reservedV125||0;
+      f.reserved=Math.max(0,(f.reserved||0)-reserved);
+      if((f.budget||0)<winner.fee){winner.stage='dropped';r.status='collapsed';return false}
+      f.budget=Math.max(0,(f.budget||0)-winner.fee);
+      f.spent=(f.spent||0)+winner.fee;
+    }
+    const sf=S.clubAIV118?.clubs?.[old];
+    if(sf){sf.budget=(sf.budget||0)+winner.fee;sf.sales=(sf.sales||0)+winner.fee}
+    p.club=winner.club;
+    p.leagueId=DB.clubs.get(winner.club)?.leagueId||p.leagueId;
+    p.leagueName=EURO_LEAGUES[p.leagueId]?.name||p.leagueName;
+    p.wage=winner.wage;
+    p.contractUntil=(contractYear()+rnd(3,5))+'-06-30';
+    p.morale=clamp((p.morale||70)+rnd(2,7),20,100);
+    winner.stage='agreed';winner.updated=S.date;winner.reservedV125=0;
+    r.status='completed';r.winner=winner.club;r.completed=S.date;
+    S.worldTransfers.unshift({date:S.date,player:p.name,from:old,to:winner.club,fee:winner.fee,type:'transfer',reason:'Competencia entre clubes'});
+    S.worldTransfers=S.worldTransfers.slice(0,250);
+    raceStateV125().history.unshift({date:S.date,player:p.name,from:old,to:winner.club,fee:winner.fee,clubs:r.offers.map(o=>o.club)});
+    raceStateV125().history=raceStateV125().history.slice(0,100);
+    addNews('Carrera de mercado resuelta',p.name+' elige '+winner.club+' tras recibir interés de varios clubes. Traspaso: '+euro(winner.fee)+'.','mercado mundial');
+    notifyRaceV125(r,'Se acabó la carrera por '+p.name+': firma por '+winner.club+'.',true);
+    return true;
+  }
+  function processRaceV125(r,date){
+    if(r.status!=='active')return;
+    const p=S.players.find(x=>String(x.id)===String(r.playerId));
+    if(!p||p.club===S.club||p.club==='Retirado'){r.status='cancelled';for(const o of r.offers)releaseOfferV125(o);return}
+    if(p.club!==r.origin&&r.origin!=='Agente libre'){r.status='cancelled';for(const o of r.offers)releaseOfferV125(o);return}
+    if(dateDiff(r.lastStep||r.created,date)<2)return;
+    r.lastStep=date;
+    const age=dateDiff(r.created,date);
+    for(const o of r.offers){
+      if(o.stage==='watch'&&age>=2+Math.max(0,3-o.priority)){
+        o.stage='contact';o.updated=date;
+        if(o.priority===3)notifyRaceV125(r,o.club+' intensifica el seguimiento de '+p.name+'.');
+      }else if(o.stage==='contact'&&age>=5+Math.max(0,3-o.priority)*2){
+        if(Math.random()<.74+(o.priority-1)*.08)makeBidV125(r,o,p);
+        else o.stage='dropped';
+      }
+    }
+    const bids=r.offers.filter(o=>o.stage==='bid');
+    if(bids.length&&(age>=9||bids.length>=2)){
+      const winner=chooseWinningOfferV125(r,p);
+      if(winner&&Math.random()<clamp(.34+age*.045+(bids.length-1)*.15,.34,.92)){
+        completeRaceTransferV125(r,p,winner);
+      }else if(!winner&&age>=14){
+        for(const o of bids)releaseOfferV125(o);
+        r.status='collapsed';r.completed=date;
+        notifyRaceV125(r,'Las negociaciones por '+p.name+' se enfrían y, por ahora, seguirá en '+p.club+'.');
+      }
+    }
+    if(age>22&&r.status==='active'){
+      const winner=chooseWinningOfferV125(r,p);
+      if(winner)completeRaceTransferV125(r,p,winner);
+      else{for(const o of r.offers)releaseOfferV125(o);r.status='expired';r.completed=date}
+    }
+  }
+  function createMarketRacesV125(date){
+    if(!isWindowOpen(date))return;
+    const st=raceStateV125();
+    const d=new Date(date+'T12:00:00Z');
+    if(d.getUTCDay()!==1||st.lastCreate===date)return;
+    st.lastCreate=date;
+    const activeIds=new Set(st.races.filter(r=>r.status==='active').map(r=>String(r.playerId)));
+    const watched=(S.shortlist||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(p=>p&&p.club!==S.club&&p.club!=='Retirado'&&!p.parentClub&&!activeIds.has(String(p.id)));
+    const watchedTargets=watched.sort((a,b)=>(b.overall||0)-(a.overall||0)).slice(0,5);
+    for(const p of watchedTargets){
+      const fame=(p.overall||0)+(p.potential||0)*.15;
+      if(Math.random()<clamp(.18+(fame-70)*.012,.18,.58))createRaceV125(p,true);
+    }
+    const pool=(S.players||[]).filter(p=>p.club&&p.club!==S.club&&p.club!=='Agente libre'&&p.club!=='Retirado'&&!p.parentClub&&p.age<=31&&(p.value||0)>=1000000&&!activeIds.has(String(p.id)));
+    pool.sort((a,b)=>{
+      const sa=(a.overall||0)*1.6+Math.max(0,(a.potential||0)-(a.overall||0))*.8+(a.age<=23?4:0)+(hashV7(String(a.id)+'|'+date)%12);
+      const sb=(b.overall||0)*1.6+Math.max(0,(b.potential||0)-(b.overall||0))*.8+(b.age<=23?4:0)+(hashV7(String(b.id)+'|'+date)%12);
+      return sb-sa;
+    });
+    const desired=Math.max(0,3-st.races.filter(r=>r.status==='active').length);
+    for(const p of pool.slice(0,desired*4)){
+      if(st.races.filter(r=>r.status==='active').length>=6)break;
+      if(Math.random()<.32)createRaceV125(p,false);
+    }
+  }
+  function processMarketRacesV125(date){
+    const st=raceStateV125();
+    if(st.lastProcess===date)return;
+    st.lastProcess=date;
+    if(!isWindowOpen(date)){
+      for(const r of st.races.filter(r=>r.status==='active')){
+        for(const o of r.offers)releaseOfferV125(o);
+        r.status='paused';
+      }
+      return;
+    }
+    for(const r of st.races.filter(r=>r.status==='paused')){
+      r.status='active';r.created=date;r.lastStep=date;
+      for(const o of r.offers){if(o.stage!=='agreed'){o.stage='watch';o.fee=0;o.wage=0;o.reservedV125=0}}
+    }
+    for(const r of st.races.filter(r=>r.status==='active').slice(0,8))processRaceV125(r,date);
+  }
+  function raceStageV125(r){
+    const stages=r.offers.map(o=>o.stage);
+    if(stages.includes('bid'))return{label:'🔥 Hay ofertas',cls:'hot'};
+    if(stages.includes('contact'))return{label:'📞 Contactos',cls:'contact'};
+    return{label:'👀 Seguimiento',cls:'watch'};
+  }
+  function raceHTMLV125(userOnly=false){
+    const st=raceStateV125();
+    let rows=st.races.filter(r=>r.status==='active');
+    if(userOnly)rows=rows.filter(r=>{
+      const p=S.players.find(x=>String(x.id)===String(r.playerId));
+      return p&&isUserWatchingV125(p);
+    });
+    rows=rows.slice(0,userOnly?8:10);
+    const offers=rows.reduce((n,r)=>n+r.offers.filter(o=>o.stage==='bid').length,0);
+    return '<div class="card race-card-v125"><div class="row"><div><h3 style="margin:0">🔥 Carreras de fichajes</h3><div class="muted">'+(userOnly?'Competencia por jugadores que sigues.':'Operaciones en las que varios clubes están moviéndose.')+'</div></div><span class="spacer"></span><span class="badge">'+rows.length+' activas</span></div>'+
+      '<div class="race-summary-v125"><div><small>OPERACIONES</small><strong>'+rows.length+'</strong></div><div><small>OFERTAS ACTIVAS</small><strong>'+offers+'</strong></div><div><small>RESUELTAS</small><strong>'+st.history.length+'</strong></div></div>'+
+      (rows.length?'<div class="race-list-v125">'+rows.map(r=>{
+        const p=S.players.find(x=>String(x.id)===String(r.playerId)),stage=raceStageV125(r);
+        return '<div class="race-row-v125"><div><strong>'+esc(r.player)+'</strong><div class="muted">'+esc(p?.club||r.origin)+' · '+esc(p?.positions||'')+'</div></div><div class="race-clubs-v125">'+r.offers.filter(o=>o.stage!=='dropped').map(o=>'<span class="race-club-v125 '+(o.stage==='bid'?'bid':o.stage==='agreed'?'agreed':'')+'">'+esc(o.club)+(o.stage==='bid'?' · '+euro(o.fee):'')+'</span>').join('')+'</div><span class="race-stage-v125 '+stage.cls+'">'+stage.label+'</span></div>';
+      }).join('')+'</div>':'<div class="empty" style="margin-top:8px">No hay carreras activas ahora mismo.</div>')+
+    '</div>';
+  }
+  function userRaceWarningV125(p){
+    const r=raceForPlayerV125(p.id);if(!r)return'';
+    const bids=r.offers.filter(o=>o.stage==='bid');
+    const clubs=r.offers.filter(o=>o.stage!=='dropped').map(o=>o.club);
+    return '<div class="race-warning-v125">🔥 Competencia: '+esc(clubs.join(', '))+(bids.length?' · '+bids.length+' oferta'+(bids.length===1?'':'s')+' ya presentada'+(bids.length===1?'':'s'):' están siguiendo al jugador')+'.</div>';
+  }
+  function resolveUserWinV125(p){
+    const r=raceForPlayerV125(p.id);if(!r)return;
+    for(const o of r.offers)releaseOfferV125(o);
+    r.status='user-won';r.winner=S.club;r.completed=S.date;
+    raceStateV125().history.unshift({date:S.date,player:p.name,to:S.club,clubs:r.offers.map(o=>o.club),type:'user'});
+    addNews('Ganaste la carrera',S.club+' se adelanta a '+r.offers.map(o=>o.club).join(', ')+' y cierra el fichaje de '+p.name+'.','mercado');
+  }
+
+  const ensureV125Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV125Base();
+    if(!S)return;
+    raceStateV125();
+  };
+
+  const worldDayV125Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV125Base(date);
+    ensureV7State();
+    createMarketRacesV125(date);
+    processMarketRacesV125(date);
+  };
+
+  const transfersV125Base=renderTransfersV7;
+  renderTransfersV7=function(){
+    transfersV125Base();
+    ensureV7State();
+    const tabs=els.view.querySelector('.transfer-tabs');
+    if(tabs)tabs.insertAdjacentHTML('afterend',raceHTMLV125(true));
+    els.view.querySelectorAll('.shortlist-row').forEach(row=>{
+      const buy=row.querySelector('.buy');if(!buy)return;
+      const p=S.players.find(x=>String(x.id)===String(buy.dataset.id));if(!p)return;
+      const html=userRaceWarningV125(p);
+      if(html&&!row.querySelector('.race-warning-v125'))row.querySelector('div')?.insertAdjacentHTML('beforeend',html);
+    });
+  };
+
+  const worldV125Base=renderWorldV7;
+  renderWorldV7=function(){
+    worldV125Base();
+    ensureV7State();
+    const holder=document.createElement('div');holder.innerHTML=raceHTMLV125(false);
+    els.view.appendChild(holder.firstElementChild);
+  };
+
+  const negotiateV125Base=openTransferNegotiation;
+  openTransferNegotiation=function(id){
+    const p=S.players.find(x=>String(x.id)===String(id));
+    negotiateV125Base(id);
+    if(!p||els.matchModal.classList.contains('hidden'))return;
+    const warn=userRaceWarningV125(p);
+    if(warn){
+      const send=els.matchBox.querySelector('#sendNeg');
+      if(send&&!els.matchBox.querySelector('.race-warning-v125'))send.insertAdjacentHTML('beforebegin',warn);
+    }
+    const send=els.matchBox.querySelector('#sendNeg');
+    if(send){
+      const old=send.onclick;
+      send.onclick=function(e){
+        const wasClub=p.club;
+        if(typeof old==='function')old.call(this,e);
+        if(wasClub!==S.club&&p.club===S.club)resolveUserWinV125(p);
+      };
+    }
+  };
+})();
+
+
 loadDB();
 })();
 </script>
