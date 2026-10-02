@@ -13067,6 +13067,305 @@ loadDB=async function(){
 })();
 
 
+
+// ===== HOME EVENT MODALS 10.43 =====
+// Los eventos que bloquean el calendario se resuelven en una ventana sobre Inicio.
+// La pantalla real (prensa, vestuario, mercado, carrera...) se monta dentro del modal.
+// Al quedar resuelto el bloqueo, el modal se cierra y el usuario continúa en Inicio.
+(function(){
+  const renderMainV143=render;
+  const renderHomeBaseV143=renderHome;
+  let modalActiveV143=false;
+  let modalEventV143=null;
+  let portalRenderingV143=false;
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.pending-modal-v143{max-width:1040px!important;width:min(1040px,94vw)!important;max-height:90vh!important;padding:0!important;overflow:hidden!important;background:#07110d!important;border:1px solid #30483a!important}'+
+    '.pending-head-v143{position:sticky;top:0;z-index:50;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:11px 13px;background:#0b1711f5;border-bottom:1px solid var(--line);backdrop-filter:blur(10px)}'+
+    '.pending-head-v143 .ico{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:#17251d;border:1px solid #31493a;font-size:20px}.pending-head-v143 strong{display:block;font-size:13px}.pending-head-v143 small{display:block;color:var(--muted);font-size:9px;margin-top:2px}.pending-head-actions-v143{display:flex;gap:5px;align-items:center;flex-wrap:wrap;justify-content:flex-end}'+
+    '.pending-body-v143{padding:12px;overflow:auto;max-height:calc(90vh - 62px);overscroll-behavior:contain}.pending-body-v143>div{animation:pendingInV143 .16s ease}.pending-body-v143 h2{font-size:18px!important}.pending-body-v143 .card{box-shadow:none!important}'+
+    '.pending-info-v143{margin:0 0 9px;padding:8px 10px;border-radius:9px;border:1px solid #72552d;background:#21180d;color:#e2cda7;font-size:10px}.pending-done-v143{padding:20px;text-align:center;font-weight:900;color:#a8edba}'+
+    '@keyframes pendingInV143{from{opacity:.5;transform:translateY(3px)}to{opacity:1;transform:none}}'+
+    '.home-pending-v142{cursor:pointer}.home-pending-v142:hover{border-color:#bd8150}.home-pending-v142 .resolvePendingV142{min-width:150px}'+
+    '@media(max-width:650px){.pending-modal-v143{width:96vw!important;max-height:92vh!important}.pending-head-v143{grid-template-columns:auto minmax(0,1fr)}.pending-head-actions-v143{grid-column:1/-1;justify-content:stretch}.pending-head-actions-v143 .btn{flex:1}.pending-body-v143{padding:8px;max-height:calc(92vh - 102px)}}';
+  document.head.appendChild(style);
+
+  function eventKeyV143(e,date=S.date){
+    return String(date)+'|'+String(e?.type||'event')+'|'+String(e?.text||'');
+  }
+  function resolvedMapV143(){
+    S.resolvedDailyEventsV143=S.resolvedDailyEventsV143||{};
+    return S.resolvedDailyEventsV143;
+  }
+  function markResolvedV143(e){
+    if(!e)return;
+    resolvedMapV143()[eventKeyV143(e)]=true;
+    save();
+  }
+  function isResolvedDailyV143(e){
+    return !!resolvedMapV143()[eventKeyV143(e)];
+  }
+  function hasOpenConflictV143(){
+    return (S.playerIssues||[]).some(x=>x.status==='open')||(S.playerRequests||[]).some(x=>x.status==='pending');
+  }
+  function domainResolvedV143(e){
+    const t=e?.type;
+    if(t==='training')return S.trainingUsedDate===S.date;
+    if(t==='press')return !S.pendingPress||!pressAvailable();
+    if(t==='bid')return !(S.pendingBids||[]).some(x=>x.status==='pending');
+    if(t==='job')return !(S.offers||[]).length;
+    if(t==='national')return !(S.nationalOffers||[]).length;
+    if(t==='conflict')return !hasOpenConflictV143();
+    if(t==='story')return !(S.storyEngine?.threads||[]).some(x=>x.status==='active');
+    if(t==='match'){
+      const fx=matchOnDate(S.date);
+      return !fx||fx.played;
+    }
+    if(t==='scouting'){
+      const a=S.scoutingAssignment;
+      return !a||a.complete||a.ends!==S.date;
+    }
+    return false;
+  }
+  function dailyPendingV143(){
+    ensureV7State();
+    const today=generateDailyEvents(S.date)||[];
+    for(const e of today){
+      if(!eventStops(e))continue;
+      if(isResolvedDailyV143(e))continue;
+      if(domainResolvedV143(e)){markResolvedV143(e);continue}
+      return e;
+    }
+    return null;
+  }
+  function currentPendingV143(){
+    const day=dailyPendingV143();
+    if(day)return day;
+    if(S.pendingPress&&S.advanceStops?.press)return{type:'press',text:'Tienes una rueda de prensa pendiente.',synthetic:true};
+    const bids=(S.pendingBids||[]).filter(x=>x.status==='pending');
+    if(bids.length&&S.advanceStops?.bid)return{type:'bid',text:'Tienes '+bids.length+' oferta'+(bids.length===1?'':'s')+' por resolver.',synthetic:true};
+    if(hasOpenConflictV143()&&S.advanceStops?.conflict)return{type:'conflict',text:'Hay un asunto de vestuario pendiente.',synthetic:true};
+    if((S.offers||[]).length&&S.advanceStops?.job)return{type:'job',text:'Tienes una oferta de club pendiente.',synthetic:true};
+    if((S.nationalOffers||[]).length&&S.advanceStops?.national)return{type:'national',text:'Tienes una oferta de selección pendiente.',synthetic:true};
+    if((S.storyEngine?.threads||[]).some(x=>x.status==='active'))return{type:'story',text:'Tienes una decisión de carrera pendiente.',synthetic:true};
+    return null;
+  }
+  window.currentPendingEventV143=currentPendingV143;
+
+  function metaV143(e){
+    const map={
+      match:['⚽','Partido pendiente','Jugar el partido'],
+      training:['🏋️','Entrenamiento pendiente','Completa la sesión sin salir de Inicio'],
+      press:['🎙️','Rueda de prensa','Responde y volverás automáticamente a Inicio'],
+      bid:['💰','Oferta pendiente','Acepta o rechaza la oferta'],
+      job:['📞','Oferta de club','Decide tu futuro'],
+      national:['🌐','Oferta de selección','Resuelve la propuesta'],
+      medical:['🩺','Parte médico','Revisa la información'],
+      conflict:['💬','Asunto de vestuario','Habla con el jugador'],
+      scouting:['🔎','Informe de scouting','Revisa la novedad'],
+      transfer:['🤝','Negociación pendiente','Continúa la operación'],
+      market:['💰','Evento de mercado','Revisa la información'],
+      rumor:['📰','Noticia pendiente','Revisa la novedad'],
+      story:['📖','Decisión de carrera','Toma una decisión']
+    };
+    return map[e?.type]||['⚠️','Evento pendiente','Resuelve este evento para seguir'];
+  }
+  function targetViewV143(type){
+    if(type==='training'||type==='medical'||type==='conflict')return'dressing';
+    if(type==='press')return'press';
+    if(type==='bid'||type==='market'||type==='transfer'||type==='scouting')return'transfers';
+    if(type==='job'||type==='national')return'career';
+    if(type==='rumor')return'news';
+    return'home';
+  }
+  function infoOnlyV143(type){
+    return ['medical','market','rumor','scouting'].includes(type);
+  }
+
+  function portalHostV143(){
+    return els.matchBox.querySelector('#pendingPortalV143');
+  }
+  function renderPortalV143(name){
+    const host=portalHostV143();
+    if(!host)return;
+    const oldView=els.view;
+    portalRenderingV143=true;
+    try{
+      els.view=host;
+      renderMainV143(name);
+    }finally{
+      els.view=oldView;
+      portalRenderingV143=false;
+    }
+    hydrateCrests(host);
+    host.querySelectorAll('.goCalendar').forEach(b=>b.style.display='none');
+  }
+
+  function closePendingModalV143(refresh=true){
+    modalActiveV143=false;
+    modalEventV143=null;
+    els.matchModal.classList.add('hidden');
+    els.matchBox.classList.remove('pending-modal-v143');
+    if(refresh)renderMainV143('home');
+  }
+
+  function checkResolvedV143(){
+    if(!modalActiveV143||!modalEventV143)return;
+    if(domainResolvedV143(modalEventV143)){
+      if(!modalEventV143.synthetic)markResolvedV143(modalEventV143);
+      const host=portalHostV143();
+      if(host)host.innerHTML='<div class="pending-done-v143">✅ Evento resuelto</div>';
+      setTimeout(()=>closePendingModalV143(true),280);
+      return;
+    }
+    // Si el bloqueo concreto desapareció, aunque quede otro distinto, volvemos a Inicio.
+    const now=currentPendingV143();
+    if(!now||now.type!==modalEventV143.type){
+      if(!modalEventV143.synthetic)markResolvedV143(modalEventV143);
+      setTimeout(()=>closePendingModalV143(true),180);
+    }
+  }
+
+  function openPendingModalV143(e){
+    if(!e)return;
+    if(e.type==='match'){
+      closePendingModalV143(false);
+      prepareNextMatch();
+      return;
+    }
+    if(e.type==='story'){
+      closePendingModalV143(true);
+      setTimeout(()=>{
+        const b=els.view.querySelector('.story-alert-v110');
+        if(b)b.click();
+      },0);
+      return;
+    }
+
+    modalActiveV143=true;
+    modalEventV143=e;
+    const m=metaV143(e);
+    const ack=infoOnlyV143(e.type)
+      ?'<button class="btn primary" id="ackPendingV143">✓ Entendido</button>'
+      :'';
+    els.matchBox.className='modal pending-modal-v143';
+    els.matchBox.innerHTML=
+      '<div class="pending-head-v143">'+
+        '<span class="ico">'+m[0]+'</span>'+
+        '<div><strong>'+esc(m[1])+'</strong><small>'+esc(e.text||m[2])+'</small></div>'+
+        '<div class="pending-head-actions-v143">'+ack+'<button class="btn ghost" id="closePendingV143">Ahora no</button></div>'+
+      '</div>'+
+      '<div class="pending-body-v143">'+
+        '<div class="pending-info-v143">'+esc(m[2])+'</div>'+
+        '<div id="pendingPortalV143"></div>'+
+      '</div>';
+    els.matchModal.classList.remove('hidden');
+
+    const close=els.matchBox.querySelector('#closePendingV143');
+    if(close)close.onclick=()=>closePendingModalV143(true);
+    const ackBtn=els.matchBox.querySelector('#ackPendingV143');
+    if(ackBtn)ackBtn.onclick=()=>{
+      if(!e.synthetic)markResolvedV143(e);
+      closePendingModalV143(true);
+    };
+
+    const view=targetViewV143(e.type);
+    renderPortalV143(view);
+
+    const host=portalHostV143();
+    if(host){
+      host.addEventListener('click',()=>{
+        setTimeout(checkResolvedV143,70);
+        setTimeout(checkResolvedV143,260);
+      },true);
+      host.addEventListener('change',()=>setTimeout(checkResolvedV143,100),true);
+    }
+  }
+  window.openPendingEventV143=openPendingModalV143;
+
+  // Mientras el portal está activo, cualquier render interno permanece dentro
+  // de la ventana. Un render a Inicio significa que la acción terminó.
+  render=function(name){
+    if(modalActiveV143&&!portalRenderingV143){
+      if(name==='home'){
+        closePendingModalV143(true);
+        return;
+      }
+      renderPortalV143(name);
+      setTimeout(checkResolvedV143,80);
+      return;
+    }
+    return renderMainV143(name);
+  };
+
+  renderHome=function(){
+    renderHomeBaseV143();
+    const p=currentPendingV143();
+    const box=els.view.querySelector('.home-pending-v142');
+    if(box&&p){
+      const btn=box.querySelector('.resolvePendingV142');
+      if(btn)btn.onclick=()=>openPendingModalV143(p);
+      box.onclick=ev=>{
+        if(ev.target.closest('button'))return;
+        openPendingModalV143(p);
+      };
+    }
+  };
+
+  // Reemplaza el avance: al encontrar el evento se queda en Inicio y abre
+  // la ventana, en vez de navegar automáticamente a otra sección.
+  advanceUntilEvent=async function(){
+    const before=currentPendingV143();
+    if(before){
+      renderMainV143('home');
+      setTimeout(()=>openPendingModalV143(before),40);
+      return;
+    }
+    let stop=null,steps=0;
+    for(let i=0;i<180;i++){
+      const ev=advanceCore();
+      steps++;
+      if(typeof animateDayStepV7==='function')await animateDayStepV7(steps,Math.max(7,steps+2));
+      stop=(ev||[]).find(eventStops);
+      if(stop)break;
+    }
+    save();
+    renderMainV143('home');
+    if(stop)setTimeout(()=>openPendingModalV143(stop),60);
+    else toast('Avance detenido tras 180 días');
+  };
+
+  advanceOneDay=async function(){
+    const before=currentPendingV143();
+    if(before){
+      renderMainV143('home');
+      setTimeout(()=>openPendingModalV143(before),40);
+      return;
+    }
+    const cur=generateDailyEvents(S.date)||[];
+    const match=cur.find(e=>e.type==='match');
+    if(match){openPendingModalV143(match);return}
+    const ev=advanceCore();
+    if(typeof animateDayStepV7==='function')await animateDayStepV7(1,1);
+    save();
+    renderMainV143('home');
+    const pending=currentPendingV143()||(ev||[]).find(eventStops);
+    if(pending)setTimeout(()=>openPendingModalV143(pending),60);
+  };
+
+  // El botón de continuar tras un partido ya termina en Inicio; garantizamos
+  // que cualquier modal de evento anterior haya quedado cerrado.
+  const openMatchBaseV143=openMatch;
+  openMatch=function(f){
+    modalActiveV143=false;
+    modalEventV143=null;
+    els.matchBox.classList.remove('pending-modal-v143');
+    openMatchBaseV143(f);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
