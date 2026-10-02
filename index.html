@@ -10431,6 +10431,361 @@ loadDB=async function(){
 })();
 
 
+
+// ===== LIVE MATCH ENGINE 2.3 10.29 =====
+// El campo refleja el estado real de la jugada: posesión, banda, córner, falta,
+// saque de puerta, disparo, gol y saque de centro. Los jugadores se recolocan
+// según formación, posición y fase del juego.
+(function(){
+  const prepareBaseV129=window.prepareMinuteV95;
+  const simulateBaseV129=simulateChance;
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.play-state-v129{position:absolute;right:7px;top:7px;z-index:14;padding:4px 7px;border-radius:999px;border:1px solid #ffffff44;background:#07110de8;font-size:8px;font-weight:950;color:#d9eadf;letter-spacing:.04em;text-transform:uppercase}.play-state-v129.corner{color:#ffe590;border-color:#8b733b}.play-state-v129.throwin{color:#a8d6ff;border-color:#3f6989}.play-state-v129.freekick{color:#ffcb9d;border-color:#865633}.play-state-v129.goalkick{color:#b9efca;border-color:#477756}.play-state-v129.goal,.play-state-v129.shot{color:#ff9f9f;border-color:#914545}.play-state-v129.kickoff{color:#eee;border-color:#777}'+
+    '.flow-ball-v95.in-goal-v129{background:#fff!important;box-shadow:0 0 0 7px #ffdf4d30,0 0 28px #ffe35f!important}.flow-ball-v95.dead-ball-v129{animation:none!important;box-shadow:0 0 0 4px #ffeb4920,0 0 14px #ffed68!important}'+
+    '.pitch-player-v129{position:absolute;z-index:5;transform:translate(-50%,-50%);transition:left .32s linear,top .32s linear;text-align:center;pointer-events:none}.pitch-player-v129 .shirt{width:18px;height:18px;border-radius:6px 6px 8px 8px;border:2px solid #ffffffc4;box-shadow:0 2px 6px #000c;display:grid;place-items:center;font-size:7px;font-weight:950;color:#fff}.pitch-player-v129.us .shirt{background:#1679c9}.pitch-player-v129.them .shirt{background:#ca3d3d}.pitch-player-v129.gk .shirt{background:#d79b20}.pitch-player-v129 .nm{display:block;max-width:68px;margin-top:2px;padding:1px 3px;border-radius:4px;background:#06100ddd;color:#fff;font-size:7px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000}.pitch-player-v129.onball .shirt{outline:2px solid #ffe55e;outline-offset:2px;box-shadow:0 0 12px #ffe55e88}.pitch-player-v129.wall .shirt{background:#743a3a}.pitch-player-v129.target .shirt{outline:1px solid #ffffff99;outline-offset:1px}'+
+    '.ball-owner-v129{position:absolute;z-index:13;transform:translate(-50%,-120%);padding:2px 5px;border-radius:5px;background:#050b09e8;color:#ffe976;font-size:7px;font-weight:950;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;pointer-events:none}'+
+    '.restart-line-v129{position:absolute;z-index:2;border-top:1px dashed #ffffff42;transform-origin:left center;pointer-events:none}.restart-arrow-v129{position:absolute;z-index:3;width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:7px solid #ffe76f99;transform:translate(-50%,-50%)}'+
+    '@media(max-width:560px){.pitch-player-v129 .shirt{width:15px;height:15px}.pitch-player-v129 .nm{font-size:6px;max-width:54px}.play-state-v129{font-size:7px}}';
+  document.head.appendChild(style);
+
+  function stateV129(M){
+    if(!M.livePlayV129){
+      M.livePlayV129={
+        type:'open',side:Math.random()<.5?'us':'them',label:'Balón en juego',
+        hold:0,x:Number(M.ballXV95||50),y:Number(M.ballYV95||50),
+        owner:null,lastType:'open',sequence:0
+      };
+    }
+    return M.livePlayV129;
+  }
+  function shortV129(name){
+    const a=String(name||'Jugador').trim().split(/\s+/);
+    return a.length>1?a[a.length-1]:a[0];
+  }
+  function ownXI129(){
+    return (S.lineup||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+  }
+  function bestXIForFormation129(club,formation='4-3-3'){
+    const squad=(S.players||[]).filter(p=>p.club===club&&!p.parentClub&&p.club!=='Retirado');
+    const form=FORMATIONS[formation]||FORMATIONS['4-3-3'],used=new Set(),out=[];
+    for(const sl of form){
+      let best=null,score=-999;
+      for(const p of squad){
+        if(used.has(String(p.id)))continue;
+        const v=playerFit(p,sl.p)+(p.fitness||100)*.01;
+        if(v>score){score=v;best=p}
+      }
+      if(best){used.add(String(best.id));out.push(best)}
+    }
+    return out;
+  }
+  function oppFormation129(M){
+    if(M.oppFormationV129)return M.oppFormationV129;
+    const prof=managerProfileV7(M.opp);
+    M.oppFormationV129=prof?.style==='Bloque bajo'?'4-4-2':prof?.style==='Posesión'?'4-3-3':'4-2-3-1';
+    return M.oppFormationV129;
+  }
+  function oppXI129(M){
+    if(!Array.isArray(M.oppXIV129)||M.oppXIV129.length<11){
+      M.oppXIV129=bestXIForFormation129(M.opp,oppFormation129(M)).map(p=>p.id);
+    }
+    return M.oppXIV129.map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+  }
+  function formationBase129(side,M){
+    const formation=side==='us'?(FORMATIONS[S.formation]||FORMATIONS['4-3-3']):(FORMATIONS[oppFormation129(M)]||FORMATIONS['4-3-3']);
+    return formation.map(sl=>{
+      // Tácticas usa ataque hacia arriba. En directo, usuario ataca a la derecha.
+      if(side==='us')return{x:100-sl.y,y:sl.x,pos:sl.p};
+      return{x:sl.y,y:100-sl.x,pos:sl.p};
+    });
+  }
+  function players129(side,M){return side==='us'?ownXI129():oppXI129(M)}
+  function isGK129(p){return /GK/.test(String(p?.positions||''))}
+  function role129(p){
+    const s=String(p?.positions||'').split(',')[0].trim();
+    if(s==='GK')return'GK';
+    if(/CB|LB|RB|LWB|RWB/.test(s))return'DEF';
+    if(/CDM|CM|LM|RM|CAM/.test(s))return'MID';
+    return'ATT';
+  }
+  function nearestPlayer129(side,M,x,y,filter=null){
+    const ps=players129(side,M),base=formationBase129(side,M);
+    let best=null,bestD=999;
+    ps.forEach((p,i)=>{
+      if(filter&&!filter(p))return;
+      const b=base[i]||{x:50,y:50};
+      const d=Math.hypot(b.x-x,b.y-y);
+      if(d<bestD){bestD=d;best=p}
+    });
+    return best||ps[0]||null;
+  }
+  function setPlay129(M,type,side,x,y,label,hold=1,owner=null){
+    const st=stateV129(M);
+    st.lastType=st.type;
+    st.type=type;st.side=side;st.x=clamp(x,1,99);st.y=clamp(y,1,99);
+    st.label=label;st.hold=hold;st.owner=owner?.id||owner||null;st.sequence=(st.sequence||0)+1;
+    M.ballXV95=st.x;M.ballYV95=st.y;M.ballOursV95=side==='us';
+  }
+  function owner129(M){
+    const st=stateV129(M),ps=players129(st.side,M);
+    return ps.find(p=>String(p.id)===String(st.owner))||nearestPlayer129(st.side,M,st.x,st.y,p=>!isGK129(p));
+  }
+  function naturalOpenPlay129(M){
+    const st=stateV129(M),side=M.ballOursV95?'us':'them';
+    st.type='open';st.side=side;st.x=Number(M.ballXV95||50);st.y=Number(M.ballYV95||50);
+    st.label=st.x>75&&side==='us'?'Ataque en último tercio':st.x<25&&side==='them'?'Ataque en último tercio':'Balón en juego';
+    st.hold=0;
+    const near=nearestPlayer129(side,M,st.x,st.y,p=>!isGK129(p));
+    st.owner=near?.id||null;
+  }
+  function generateRestart129(M){
+    const st=stateV129(M);
+    if(st.hold>0){st.hold--;return true}
+    if(st.type==='goal'){
+      const next=st.side==='us'?'them':'us';
+      const taker=nearestPlayer129(next,M,50,50,p=>role129(p)==='ATT')||players129(next,M)[10];
+      setPlay129(M,'kickoff',next,50,50,'Saque de centro',1,taker);
+      return true;
+    }
+    if(['corner','throwin','freekick','goalkick','kickoff','shot'].includes(st.type)){
+      st.type='open';st.label='Balón en juego';st.hold=0;
+      M.ballOursV95=st.side==='us';
+      // La reanudación avanza hacia el campo rival.
+      if(st.side==='us')M.ballXV95=clamp(st.x+rnd(5,14),5,94);
+      else M.ballXV95=clamp(st.x-rnd(5,14),6,95);
+      M.ballYV95=clamp(st.y+rnd(-12,12),7,93);
+      st.x=M.ballXV95;st.y=M.ballYV95;
+      st.owner=nearestPlayer129(st.side,M,st.x,st.y,p=>!isGK129(p))?.id||null;
+      return false;
+    }
+    return false;
+  }
+  function maybeNaturalRestart129(M){
+    const st=stateV129(M);
+    if(st.type!=='open')return;
+    const x=Number(M.ballXV95||50),y=Number(M.ballYV95||50),side=M.ballOursV95?'us':'them';
+    // Saques de banda: no alteran el resultado, pero sí la continuidad real del campo.
+    if(Math.random()<.055){
+      const top=Math.random()<.5,yline=top?2:98;
+      const xline=clamp(x+rnd(-8,8),10,90);
+      const taker=nearestPlayer129(side,M,xline,yline,p=>!isGK129(p));
+      setPlay129(M,'throwin',side,xline,yline,'Saque de banda',1,taker);
+      M.events.push({text:'↔️ '+M.minute+"' Saque de banda para "+(side==='us'?S.club:M.opp)+'.',side});
+      return;
+    }
+    // Si la pelota llega a línea de fondo sin evento de tiro, puede acabar en saque de puerta.
+    if((x<8||x>92)&&Math.random()<.17){
+      const defending=x>50?'them':'us';
+      const gk=players129(defending,M).find(isGK129);
+      const gx=defending==='us'?7:93;
+      setPlay129(M,'goalkick',defending,gx,50,'Saque de puerta',1,gk);
+      M.events.push({text:'🥅 '+M.minute+"' Saque de puerta para "+(defending==='us'?S.club:M.opp)+'.',side:defending});
+    }
+  }
+  window.prepareMinuteV95=function(M){
+    const st=stateV129(M);
+    if(generateRestart129(M))return;
+    if(typeof prepareBaseV129==='function')prepareBaseV129(M);
+    naturalOpenPlay129(M);
+    maybeNaturalRestart129(M);
+  };
+
+  simulateChance=function(M){
+    const before={
+      hg:M.hg,ag:M.ag,myCorners:M.myCorners||0,oppCorners:M.oppCorners||0,
+      myFouls:M.myFouls||0,oppFouls:M.oppFouls||0,myShots:M.myShots||0,oppShots:M.oppShots||0,
+      ev:(M.events||[]).length
+    };
+    simulateBaseV129(M);
+    const newEvents=(M.events||[]).slice(before.ev);
+    const myGoal=(M.home?M.hg:M.ag)>(M.home?before.hg:before.ag);
+    const oppGoal=(M.home?M.ag:M.hg)>(M.home?before.ag:before.hg);
+    if(myGoal||oppGoal){
+      const side=myGoal?'us':'them',gx=side==='us'?99:1;
+      const scorerEvent=[...newEvents].reverse().find(e=>e?.cls==='goal');
+      const scorer=side==='us'&&scorerEvent?ownXI129().find(p=>String(scorerEvent.text||'').includes(p.name)):null;
+      setPlay129(M,'goal',side,gx,50,'⚽ GOL',1,scorer);
+      return;
+    }
+    const myCorner=(M.myCorners||0)>before.myCorners,oppCorner=(M.oppCorners||0)>before.oppCorners;
+    if(myCorner||oppCorner){
+      const side=myCorner?'us':'them';
+      const y=Math.random()<.5?2:98,x=side==='us'?98:2;
+      const taker=nearestPlayer129(side,M,x,y,p=>/LW|RW|LM|RM|LB|RB|CAM|CM/.test(String(p.positions||'')))||nearestPlayer129(side,M,x,y,p=>!isGK129(p));
+      setPlay129(M,'corner',side,x,y,'🚩 Córner',1,taker);
+      const hasText=newEvents.some(e=>/córner/i.test(String(e.text||'')));
+      if(!hasText)M.events.push({text:'🚩 '+M.minute+"' Córner para "+(side==='us'?S.club:M.opp)+'.',side});
+      return;
+    }
+    const myFoul=(M.myFouls||0)>before.myFouls,oppFoul=(M.oppFouls||0)>before.oppFouls;
+    if(myFoul||oppFoul){
+      // Si cometemos falta, saca el rival; y viceversa.
+      const side=myFoul?'them':'us';
+      let x=Number(M.ballXV95||50),y=Number(M.ballYV95||50);
+      if(side==='us')x=clamp(x+8,32,86);else x=clamp(x-8,14,68);
+      const taker=nearestPlayer129(side,M,x,y,p=>!isGK129(p));
+      setPlay129(M,'freekick',side,x,y,'Falta / libre directo',1,taker);
+      return;
+    }
+    const myShot=(M.myShots||0)>before.myShots,oppShot=(M.oppShots||0)>before.oppShots;
+    if(myShot||oppShot){
+      const side=myShot?'us':'them',x=side==='us'?92:8,y=clamp(50+rnd(-20,20),15,85);
+      const shooter=nearestPlayer129(side,M,x,y,p=>role129(p)==='ATT')||nearestPlayer129(side,M,x,y,p=>!isGK129(p));
+      setPlay129(M,'shot',side,x,y,'🎯 Remate',0,shooter);
+      return;
+    }
+    naturalOpenPlay129(M);
+  };
+
+  function standardCoords129(side,M){
+    const base=formationBase129(side,M),st=stateV129(M),attacking=st.side===side;
+    const mental=side==='us'?S.mentality:(managerProfileV7(M.opp)?.style==='Presión alta'?'Presión alta':'Equilibrada');
+    const mentalShift=mental==='Ofensiva'?4:mental==='Presión alta'?3:mental==='Defensiva'?-4:0;
+    return base.map((b,i)=>{
+      let x=b.x,y=b.y;
+      const toward=clamp((st.x-50)*(attacking?.13:.08),-9,9);
+      x+=toward+(side==='us'?mentalShift:-mentalShift);
+      y+=(st.y-y)*.075;
+      if(b.pos==='GK'){x=side==='us'?7:93;y=50}
+      return{x:clamp(x,4,96),y:clamp(y,6,94),cls:''};
+    });
+  }
+  function setPieceCoords129(side,M){
+    const st=stateV129(M),ps=players129(side,M),base=standardCoords129(side,M),attacking=st.side===side;
+    const goalX=side==='us'?98:2,ownGoalX=side==='us'?2:98;
+    const out=base.map(x=>({...x}));
+    const gkIndex=ps.findIndex(isGK129);
+    if(st.type==='kickoff'){
+      out.forEach((p,i)=>{p.x=side==='us'?clamp(p.x,5,49):clamp(p.x,51,95)});
+      const att=ps.map((p,i)=>({p,i})).filter(x=>role129(x.p)==='ATT');
+      if(att[0]){out[att[0].i]={x:side==='us'?48:52,y:48,cls:att[0].p.id===st.owner?'onball':''}}
+      if(att[1])out[att[1].i]={x:side==='us'?43:57,y:55,cls:''};
+      return out;
+    }
+    if(st.type==='goalkick'){
+      if(attacking){
+        if(gkIndex>=0)out[gkIndex]={x:side==='us'?7:93,y:50,cls:'onball'};
+        const defs=ps.map((p,i)=>({p,i})).filter(x=>role129(x.p)==='DEF');
+        defs.forEach((x,j)=>out[x.i]={x:side==='us'?18:82,y:[16,38,62,84][j%4],cls:''});
+        const mids=ps.map((p,i)=>({p,i})).filter(x=>role129(x.p)==='MID');
+        mids.forEach((x,j)=>out[x.i]={x:side==='us'?38:62,y:[27,50,73][j%3],cls:''});
+      }else{
+        out.forEach((p,i)=>{if(i!==gkIndex)p.x=side==='us'?clamp(p.x,52,88):clamp(p.x,12,48)});
+      }
+      return out;
+    }
+    if(st.type==='corner'){
+      if(attacking){
+        const nonGK=ps.map((p,i)=>({p,i,role:role129(p)})).filter(x=>x.i!==gkIndex);
+        const ownerIndex=ps.findIndex(p=>String(p.id)===String(st.owner));
+        if(ownerIndex>=0)out[ownerIndex]={x:st.x,y:st.y,cls:'onball'};
+        const targets=nonGK.filter(x=>x.i!==ownerIndex).sort((a,b)=>(b.role==='ATT')-(a.role==='ATT')||(b.role==='DEF')-(a.role==='DEF'));
+        const boxY=[30,40,50,61,70];
+        targets.slice(0,5).forEach((x,j)=>out[x.i]={x:side==='us'?91:9,y:boxY[j],cls:'target'});
+        targets.slice(5,8).forEach((x,j)=>out[x.i]={x:side==='us'?78:22,y:[35,52,68][j],cls:''});
+        targets.slice(8).forEach((x,j)=>out[x.i]={x:side==='us'?60:40,y:35+j*30,cls:''});
+      }else{
+        if(gkIndex>=0)out[gkIndex]={x:side==='us'?5:95,y:50,cls:''};
+        const field=ps.map((p,i)=>({p,i})).filter(x=>x.i!==gkIndex);
+        const ys=[25,33,41,49,57,65,73];
+        field.slice(0,7).forEach((x,j)=>out[x.i]={x:side==='us'?10:90,y:ys[j],cls:'target'});
+        field.slice(7,9).forEach((x,j)=>out[x.i]={x:side==='us'?21:79,y:40+j*20,cls:''});
+        if(field[9])out[field[9].i]={x:side==='us'?40:60,y:50,cls:''};
+      }
+      return out;
+    }
+    if(st.type==='throwin'){
+      const ownerIndex=ps.findIndex(p=>String(p.id)===String(st.owner));
+      if(attacking&&ownerIndex>=0)out[ownerIndex]={x:st.x,y:st.y,cls:'onball'};
+      out.forEach((p,i)=>{
+        if(i===ownerIndex||i===gkIndex)return;
+        const dist=Math.abs(p.x-st.x);
+        if(dist<28){p.x=clamp(st.x+(side==='us'?rnd(5,17):rnd(-17,-5)),5,95);p.y=clamp(st.y+(st.y<50?rnd(7,24):rnd(-24,-7)),6,94)}
+      });
+      return out;
+    }
+    if(st.type==='freekick'){
+      if(attacking){
+        const ownerIndex=ps.findIndex(p=>String(p.id)===String(st.owner));
+        if(ownerIndex>=0)out[ownerIndex]={x:st.x,y:st.y,cls:'onball'};
+        const field=ps.map((p,i)=>({p,i})).filter(x=>x.i!==gkIndex&&x.i!==ownerIndex);
+        field.filter(x=>role129(x.p)==='ATT').slice(0,3).forEach((x,j)=>out[x.i]={x:side==='us'?91:9,y:[36,50,64][j],cls:'target'});
+      }else{
+        const field=ps.map((p,i)=>({p,i})).filter(x=>x.i!==gkIndex);
+        const wallX=side==='us'?clamp(st.x-9,8,88):clamp(st.x+9,12,92);
+        field.slice(0,4).forEach((x,j)=>out[x.i]={x:wallX,y:clamp(st.y-12+j*8,12,88),cls:'wall'});
+        if(gkIndex>=0)out[gkIndex]={x:side==='us'?5:95,y:clamp(st.y,30,70),cls:''};
+      }
+      return out;
+    }
+    if(st.type==='goal'){
+      // Balón acaba en portería; los atacantes están ya dentro/cerquita del área.
+      if(attacking){
+        ps.forEach((p,i)=>{if(i!==gkIndex&&role129(p)==='ATT')out[i]={x:side==='us'?91:9,y:35+(i%3)*15,cls:''}});
+      }
+      return out;
+    }
+    if(st.type==='shot'){
+      if(attacking){
+        const oi=ps.findIndex(p=>String(p.id)===String(st.owner));
+        if(oi>=0)out[oi]={x:st.x,y:st.y,cls:'onball'};
+        ps.forEach((p,i)=>{if(i!==oi&&i!==gkIndex&&role129(p)==='ATT')out[i].x=side==='us'?86:14});
+      }else{
+        ps.forEach((p,i)=>{if(i!==gkIndex&&role129(p)==='DEF')out[i].x=side==='us'?15:85});
+      }
+      return out;
+    }
+    return out;
+  }
+  function playerHTML129(side,M){
+    const ps=players129(side,M),coords=setPieceCoords129(side,M),st=stateV129(M);
+    return coords.map((c,i)=>{
+      const p=ps[i],gk=isGK129(p),owner=String(p?.id)===String(st.owner);
+      return '<div class="pitch-player-v129 '+side+' '+(gk?'gk ':'')+(c.cls||'')+(owner?' onball':'')+'" style="left:'+c.x+'%;top:'+c.y+'%">'+
+        '<span class="shirt">'+(i+1)+'</span><span class="nm">'+esc(shortV129(p?.name||(side==='us'?S.club:M.opp)))+'</span></div>';
+    }).join('');
+  }
+  function stateLabel129(st){
+    return({open:'Balón en juego',corner:'🚩 Córner',throwin:'↔ Saque de banda',freekick:'Falta',goalkick:'Saque de puerta',goal:'⚽ Gol',kickoff:'Saque de centro',shot:'🎯 Remate'})[st.type]||st.label||'Balón en juego';
+  }
+  function renderLiveField129(M){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');if(!pitch)return;
+    const st=stateV129(M);
+    pitch.querySelectorAll('.pitch-player-v127,.pitch-player-v129,.play-state-v129,.ball-owner-v129,.restart-line-v129,.restart-arrow-v129').forEach(x=>x.remove());
+    const ball=pitch.querySelector('.flow-ball-v95');
+    if(ball){
+      ball.style.left=Number(st.x??M.ballXV95||50).toFixed(1)+'%';
+      ball.style.top=Number(st.y??M.ballYV95||50).toFixed(1)+'%';
+      ball.classList.toggle('in-goal-v129',st.type==='goal');
+      ball.classList.toggle('dead-ball-v129',st.type!=='open'&&st.type!=='shot'&&st.type!=='goal');
+    }
+    pitch.insertAdjacentHTML('beforeend',
+      playerHTML129('us',M)+playerHTML129('them',M)+
+      '<span class="play-state-v129 '+esc(st.type)+'">'+esc(stateLabel129(st))+'</span>'
+    );
+    const own=owner129(M);
+    if(own&&st.type!=='goal'){
+      pitch.insertAdjacentHTML('beforeend','<span class="ball-owner-v129" style="left:'+st.x+'%;top:'+st.y+'%">'+esc(shortV129(own.name))+'</span>');
+    }
+    const read=pitch.querySelector('.ball-readout-v128');
+    if(read){
+      const sideName=st.side==='us'?S.club:M.opp;
+      read.innerHTML='<span class="dir">'+(st.side==='us'?'→':'←')+'</span><span><b>⚽ '+esc(stateLabel129(st).toUpperCase())+'</b> · '+esc(sideName)+(own?' · '+esc(shortV129(own.name)):'')+'</span>';
+    }
+  }
+
+  const renderBaseV129=renderMatch;
+  renderMatch=function(M){
+    stateV129(M);
+    renderBaseV129(M);
+    if(!M)return;
+    renderLiveField129(M);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
