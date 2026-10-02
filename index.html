@@ -12850,6 +12850,223 @@ loadDB=async function(){
 })();
 
 
+
+// ===== RICH HOME & EVENT ROUTING 10.42 =====
+// Recupera información útil en Inicio y convierte los bloqueos de avance
+// en acciones que llevan directamente a la pantalla donde se resuelven.
+(function(){
+  const advanceUntilBaseV142=advanceUntilEvent;
+  const advanceOneBaseV142=advanceOneDay;
+  const renderHomeBaseV142=renderHome;
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.home-pending-v142{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:11px 12px;border:1px solid #8a5c2f;border-radius:13px;background:linear-gradient(135deg,#2a1b0d,#14170e);box-shadow:inset 3px 0 0 #d6964d;margin-top:9px}'+
+    '.home-pending-v142 .ico{font-size:24px}.home-pending-v142 strong{display:block;font-size:12px}.home-pending-v142 small{display:block;color:#d7c2a1;margin-top:2px;font-size:9px}.home-pending-v142 .btn{white-space:nowrap}'+
+    '.home-dashboard-v142{display:grid;gap:10px;margin-top:10px}.home-kpis-v142{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.home-kpi-v142{padding:10px;border:1px solid var(--line);border-radius:12px;background:#0a1610;min-width:0}.home-kpi-v142 small{display:block;color:var(--muted);font-size:9px;font-weight:800}.home-kpi-v142 strong{display:block;font-size:20px;line-height:1.05;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.home-kpi-v142 em{display:block;font-style:normal;color:var(--muted);font-size:9px;margin-top:4px}'+
+    '.home-grid-v142{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.home-panel-v142{padding:11px!important;min-width:0}.home-panel-head-v142{display:flex;align-items:center;gap:7px;margin-bottom:8px}.home-panel-head-v142 h3{margin:0;font-size:13px}.home-mini-row-v142{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1b2b22;font-size:10px}.home-mini-row-v142:last-child{border-bottom:0}.home-mini-row-v142>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.home-mini-row-v142 .spacer{flex:1}'+
+    '.form-strip-v142{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.form-pill-v142{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:10px;font-weight:950;border:1px solid var(--line);background:#102019}.form-pill-v142.w{color:#a9efbb;border-color:#376b47;background:#10261a}.form-pill-v142.d{color:#f1da94;border-color:#6e5c31;background:#231e10}.form-pill-v142.l{color:#ffaaaa;border-color:#713d3d;background:#271313}'+
+    '.home-quick-v142{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}.home-quick-v142 button{min-width:0;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;font-size:9px}.home-quick-v142 button span{font-size:18px}.home-task-v142{padding:7px 8px;border-radius:9px;background:#0d1a13;border:1px solid #203529;margin-top:6px;font-size:10px}.home-task-v142.warn{border-color:#72542d;background:#21180d}.home-task-v142.bad{border-color:#713c3c;background:#231212}'+
+    '.home-news-v142{display:grid;gap:0}.home-news-v142 .home-mini-row-v142{align-items:flex-start}.home-news-v142 small{color:var(--muted);font-size:8px;white-space:nowrap}'+
+    '@media(max-width:900px){.home-kpis-v142{grid-template-columns:repeat(2,minmax(0,1fr))}.home-quick-v142{grid-template-columns:repeat(3,minmax(0,1fr))}}'+
+    '@media(max-width:620px){.home-grid-v142{grid-template-columns:1fr}.home-pending-v142{grid-template-columns:auto minmax(0,1fr)}.home-pending-v142 .btn{grid-column:1/-1;width:100%}.home-quick-v142{grid-template-columns:repeat(3,minmax(0,1fr))}.home-kpi-v142 strong{font-size:18px}}';
+  document.head.appendChild(style);
+
+  function currentPendingV142(){
+    ensureV7State();
+    const today=generateDailyEvents(S.date)||[];
+    const stop=today.find(e=>eventStops(e));
+    if(stop)return stop;
+
+    if(S.pendingPress&&S.advanceStops?.press)return{type:'press',text:'Tienes una rueda de prensa pendiente.'};
+    const bids=(S.pendingBids||[]).filter(x=>x.status==='pending');
+    if(bids.length&&S.advanceStops?.bid)return{type:'bid',text:'Tienes '+bids.length+' oferta'+(bids.length===1?'':'s')+' por resolver.'};
+    const issues=(S.playerIssues||[]).filter(x=>x.status==='open');
+    const requests=(S.playerRequests||[]).filter(x=>x.status==='pending');
+    if((issues.length||requests.length)&&S.advanceStops?.conflict)return{type:'conflict',text:'Hay un asunto de vestuario pendiente.'};
+    const jobs=(S.offers||[]).length;
+    if(jobs&&S.advanceStops?.job)return{type:'job',text:'Tienes una oferta de club pendiente.'};
+    const nat=(S.nationalOffers||[]).length;
+    if(nat&&S.advanceStops?.national)return{type:'national',text:'Tienes una oferta de selección pendiente.'};
+    const story=(S.storyEngine?.threads||[]).find(x=>x.status==='active');
+    if(story)return{type:'story',text:'Tienes una decisión de carrera pendiente.'};
+    return null;
+  }
+
+  function eventMetaV142(e){
+    const type=e?.type||'event';
+    const map={
+      match:['⚽','Jugar partido'],
+      training:['🏋️','Abrir entrenamiento'],
+      press:['🎙️','Responder a la prensa'],
+      bid:['💰','Revisar oferta'],
+      job:['📞','Ver oferta de club'],
+      national:['🌐','Ver oferta de selección'],
+      medical:['🩺','Ver parte médico'],
+      conflict:['💬','Resolver vestuario'],
+      scouting:['🔎','Abrir scouting'],
+      transfer:['🤝','Abrir negociación'],
+      market:['💰','Ir al mercado'],
+      rumor:['📰','Ver noticias'],
+      story:['📖','Resolver historia']
+    };
+    return map[type]||['⚠️','Resolver evento'];
+  }
+
+  function goPendingV142(e){
+    if(!e)return;
+    const type=e.type;
+    if(type==='match'){prepareNextMatch();return}
+    if(type==='training'||type==='medical'||type==='conflict'){render('dressing');return}
+    if(type==='press'){render('press');return}
+    if(type==='bid'||type==='market'||type==='transfer'||type==='scouting'){render('transfers');return}
+    if(type==='job'||type==='national'){render('career');return}
+    if(type==='rumor'){render('news');return}
+    if(type==='story'){
+      render('home');
+      setTimeout(()=>{
+        const b=els.view.querySelector('.story-alert-v110');
+        if(b)b.click();
+      },0);
+      return;
+    }
+    render('home');
+  }
+  window.goPendingEventV142=goPendingV142;
+
+  advanceUntilEvent=async function(){
+    const before=currentPendingV142();
+    if(before){
+      toast('Evento pendiente: '+before.text);
+      goPendingV142(before);
+      return;
+    }
+    await advanceUntilBaseV142();
+    const after=currentPendingV142();
+    if(after)setTimeout(()=>goPendingV142(after),80);
+  };
+
+  advanceOneDay=async function(){
+    const cur=generateDailyEvents(S.date)||[];
+    const match=cur.find(e=>e.type==='match');
+    if(match){
+      toast('Tienes partido hoy');
+      goPendingV142(match);
+      return;
+    }
+    return advanceOneBaseV142();
+  };
+
+  function playedFixturesV142(){
+    return [...(S.leagueFixtures||[]),...(S.extraFixtures||[])]
+      .filter(f=>f.played&&(f.home===S.club||f.away===S.club))
+      .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  }
+  function recentFormV142(){
+    return playedFixturesV142().slice(0,5).reverse().map(f=>{
+      const gf=f.home===S.club?Number(f.hg||0):Number(f.ag||0);
+      const ga=f.home===S.club?Number(f.ag||0):Number(f.hg||0);
+      return{r:gf>ga?'W':gf===ga?'D':'L',score:gf+'-'+ga,opp:f.home===S.club?f.away:f.home};
+    });
+  }
+  function squadStatsV142(){
+    const ps=getClubPlayers(S.club);
+    const avg=ps.length?ps.reduce((a,p)=>a+Number(p.overall||0),0)/ps.length:0;
+    const morale=ps.length?ps.reduce((a,p)=>a+Number(p.morale||70),0)/ps.length:70;
+    const unavailable=ps.filter(p=>isUnavailable(p));
+    const expiring=ps.filter(p=>p.contractUntil&&dateDiff(S.date,p.contractUntil)>=0&&dateDiff(S.date,p.contractUntil)<=365)
+      .sort((a,b)=>String(a.contractUntil).localeCompare(String(b.contractUntil)));
+    return{ps,avg,morale,unavailable,expiring};
+  }
+  function marketTasksV142(){
+    const bids=(S.pendingBids||[]).filter(x=>x.status==='pending').length;
+    const deals=(S.marketV113?.outgoing||[]).filter(d=>['club_counter','player_counter'].includes(d.status)).length;
+    const watch=(S.shortlist||[]).length;
+    return{bids,deals,watch};
+  }
+  function objectiveLabelV142(){
+    try{return S.objective?.label||objectiveText()}catch(e){return S.objective?.label||'Objetivo de temporada'}
+  }
+  function objectiveTrackV142(){
+    try{return objectiveOnTrack()}catch(e){return true}
+  }
+  function richHomeHTMLV142(){
+    const q=squadStatsV142(),form=recentFormV142(),m=marketTasksV142();
+    const pos=typeof position==='function'?position():'—';
+    const issues=(S.playerIssues||[]).filter(x=>x.status==='open').length+(S.playerRequests||[]).filter(x=>x.status==='pending').length;
+    const news=(S.news||[]).slice(0,4);
+    const unavailable=q.unavailable.slice(0,4);
+    const objective=objectiveLabelV142();
+    const onTrack=objectiveTrackV142();
+
+    return '<div class="home-dashboard-v142">'+
+      '<div class="home-kpis-v142">'+
+        '<div class="home-kpi-v142"><small>CLASIFICACIÓN</small><strong>'+esc(String(pos))+'º</strong><em>'+esc(EURO_LEAGUES[S.leagueId]?.name||'Liga')+'</em></div>'+
+        '<div class="home-kpi-v142"><small>DIRECTIVA</small><strong class="'+(S.board<35?'bad':S.board<60?'yellow':'good')+'">'+Math.round(S.board||0)+'%</strong><em>'+esc(onTrack?'Objetivo en curso':'Por debajo del objetivo')+'</em></div>'+
+        '<div class="home-kpi-v142"><small>PLANTILLA</small><strong>'+q.avg.toFixed(1)+'</strong><em>Moral '+Math.round(q.morale)+'% · '+q.unavailable.length+' bajas</em></div>'+
+        '<div class="home-kpi-v142"><small>PRESUPUESTO</small><strong>'+euro(S.budget||0)+'</strong><em>'+esc(isWindowOpen(S.date)?'Mercado abierto':'Mercado cerrado')+'</em></div>'+
+      '</div>'+
+
+      '<div class="home-grid-v142">'+
+        '<div class="card home-panel-v142"><div class="home-panel-head-v142"><h3>📈 Forma reciente</h3><span class="spacer"></span><button class="btn ghost homeGoV142" data-view="calendar">Calendario</button></div>'+
+          (form.length?'<div class="form-strip-v142">'+form.map(x=>'<span class="form-pill-v142 '+x.r.toLowerCase()+'" title="'+esc(x.opp+' '+x.score)+'">'+x.r+'</span>').join('')+'</div>':'<div class="empty">Todavía no hay resultados.</div>')+
+          '<div class="home-task-v142" style="margin-top:9px"><strong>Objetivo:</strong> '+esc(objective)+'</div>'+
+        '</div>'+
+
+        '<div class="card home-panel-v142"><div class="home-panel-head-v142"><h3>👥 Estado de plantilla</h3><span class="spacer"></span><button class="btn ghost homeGoV142" data-view="squad">Plantilla</button></div>'+
+          (unavailable.length?unavailable.map(p=>'<div class="home-mini-row-v142"><span>🚑 '+esc(p.name)+'</span><span class="spacer"></span><small class="muted">'+(p.injuredUntil?'hasta '+dateStr(p.injuredUntil):(p.suspension||0)+' sanción')+'</small></div>').join(''):'<div class="home-mini-row-v142"><span>✅ Sin bajas importantes</span></div>')+
+          (q.expiring.length?'<div class="home-task-v142 warn">📝 '+q.expiring.length+' contrato'+(q.expiring.length===1?'':'s')+' termina'+(q.expiring.length===1?'':'n')+' en menos de un año.</div>':'')+
+          (issues?'<div class="home-task-v142 bad">💬 '+issues+' asunto'+(issues===1?'':'s')+' de vestuario pendiente'+(issues===1?'':'s')+'.</div>':'')+
+        '</div>'+
+
+        '<div class="card home-panel-v142"><div class="home-panel-head-v142"><h3>💼 Mercado y gestión</h3><span class="spacer"></span><button class="btn ghost homeGoV142" data-view="transfers">Mercado</button></div>'+
+          '<div class="home-mini-row-v142"><span>💰 Ofertas recibidas</span><span class="spacer"></span><strong>'+m.bids+'</strong></div>'+
+          '<div class="home-mini-row-v142"><span>🤝 Negociaciones que requieren respuesta</span><span class="spacer"></span><strong>'+m.deals+'</strong></div>'+
+          '<div class="home-mini-row-v142"><span>⭐ Lista de seguimiento</span><span class="spacer"></span><strong>'+m.watch+'</strong></div>'+
+          '<div class="home-mini-row-v142"><span>📝 Contratos próximos a vencer</span><span class="spacer"></span><strong>'+q.expiring.length+'</strong></div>'+
+        '</div>'+
+
+        '<div class="card home-panel-v142"><div class="home-panel-head-v142"><h3>📰 Últimas noticias</h3><span class="spacer"></span><button class="btn ghost homeGoV142" data-view="news">Ver todas</button></div><div class="home-news-v142">'+
+          (news.length?news.map(n=>'<div class="home-mini-row-v142"><span><strong>'+esc(n.title||'Noticia')+'</strong><br><span class="muted">'+esc(String(n.body||'').slice(0,95))+(String(n.body||'').length>95?'…':'')+'</span></span><span class="spacer"></span><small>'+dateStr(n.date||S.date)+'</small></div>').join(''):'<div class="empty">Sin noticias recientes.</div>')+
+        '</div>'+
+      '</div>'+
+
+      '<div class="card home-panel-v142"><div class="home-panel-head-v142"><h3>⚡ Accesos rápidos</h3></div><div class="home-quick-v142">'+
+        '<button class="btn ghost homeGoV142" data-view="squad"><span>👥</span>Plantilla</button>'+
+        '<button class="btn ghost homeGoV142" data-view="tactics"><span>🧠</span>Táctica</button>'+
+        '<button class="btn ghost homeGoV142" data-view="dressing"><span>🩺</span>Vestuario</button>'+
+        '<button class="btn ghost homeGoV142" data-view="transfers"><span>💰</span>Mercado</button>'+
+        '<button class="btn ghost homeGoV142" data-view="contracts"><span>📝</span>Contratos</button>'+
+        '<button class="btn ghost homeGoV142" data-view="academy"><span>🌱</span>Cantera</button>'+
+      '</div></div>'+
+    '</div>';
+  }
+
+  renderHome=function(){
+    renderHomeBaseV142();
+    ensureV7State();
+
+    const root=els.view.querySelector('.home-min-v109')||els.view;
+    const pending=currentPendingV142();
+    if(pending&&!els.view.querySelector('.home-pending-v142')){
+      const meta=eventMetaV142(pending);
+      const box=document.createElement('div');
+      box.className='home-pending-v142';
+      box.innerHTML='<span class="ico">'+meta[0]+'</span><div><strong>Evento pendiente</strong><small>'+esc(pending.text||'Tienes una acción que resolver antes de continuar.')+'</small></div><button class="btn warn resolvePendingV142">'+esc(meta[1])+' →</button>';
+      const day=root.querySelector('.home-day-v109');
+      if(day)day.insertAdjacentElement('afterend',box);else root.prepend(box);
+      box.querySelector('.resolvePendingV142').onclick=()=>goPendingV142(pending);
+    }
+
+    const holder=document.createElement('div');
+    holder.innerHTML=richHomeHTMLV142();
+    root.appendChild(holder.firstElementChild);
+    els.view.querySelectorAll('.homeGoV142').forEach(b=>b.onclick=()=>render(b.dataset.view));
+    hydrateCrests(els.view);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
