@@ -8448,6 +8448,444 @@ loadDB=async function(){
 })();
 
 
+
+// ===== YOUTH ACADEMY 2.0 10.22 =====
+// Scouting por país y perfil, informes progresivos, crecimiento en academia,
+// joyas ocultas, gestión de plazas y promociones de cantera de clubes IA.
+(function(){
+  const ACADEMY_CAP_V122=18;
+  const YOUTH_NAMES_V122={
+    'España':[['Iker','Unai','Aitor','Jon','Oier','Mikel','Ander','Asier','Hugo','Martín'],['García','Martínez','López','Ruiz','Navarro','Etxeberria','Agirre','Vega','Prieto','Sanz']],
+    'Francia':[['Lucas','Hugo','Theo','Enzo','Mathis','Noah','Louis','Ethan','Yanis','Rayan'],['Martin','Bernard','Dubois','Robert','Moreau','Laurent','Simon','Michel','Leroy','Roux']],
+    'Inglaterra':[['Jack','Harry','Oliver','George','Charlie','Leo','Alfie','Oscar','Jacob','Archie'],['Smith','Jones','Taylor','Brown','Wilson','Davies','Evans','Thomas','Roberts','Walker']],
+    'Alemania':[['Lukas','Leon','Paul','Jonas','Felix','Finn','Noah','Max','Elias','Anton'],['Müller','Schmidt','Schneider','Fischer','Weber','Meyer','Wagner','Becker','Hoffmann','Koch']],
+    'Italia':[['Luca','Marco','Matteo','Andrea','Davide','Alessio','Simone','Nicolo','Pietro','Federico'],['Rossi','Russo','Ferrari','Esposito','Bianchi','Romano','Colombo','Ricci','Marino','Greco']],
+    'Portugal':[['João','Tiago','Diogo','Gonçalo','Rui','Tomás','Pedro','Afonso','Miguel','Duarte'],['Silva','Santos','Ferreira','Pereira','Oliveira','Costa','Rodrigues','Martins','Sousa','Fernandes']],
+    'Países Bajos':[['Daan','Sem','Luuk','Finn','Milan','Jesse','Thijs','Noah','Mees','Bram'],['De Jong','Jansen','De Vries','Van Dijk','Bakker','Visser','Smit','Meijer','De Boer','Mulder']],
+    'Bélgica':[['Louis','Arthur','Jules','Noah','Lucas','Victor','Mathis','Milan','Liam','Nolan'],['Peeters','Janssens','Maes','Willems','Claes','Goossens','Wouters','De Smet','Jacobs','Vermeulen']],
+    'Brasil':[['João','Gabriel','Lucas','Pedro','Matheus','Rafael','Gustavo','Caio','Bruno','Vinícius'],['Silva','Santos','Oliveira','Souza','Lima','Pereira','Costa','Rodrigues','Almeida','Nascimento']],
+    'Argentina':[['Mateo','Thiago','Lautaro','Santino','Benjamín','Valentín','Franco','Tomás','Joaquín','Bautista'],['González','Rodríguez','Fernández','López','Martínez','Pérez','Gómez','Sánchez','Romero','Díaz']],
+    'Uruguay':[['Facundo','Agustín','Santiago','Matías','Joaquín','Nicolás','Franco','Bruno','Luciano','Sebastián'],['Rodríguez','González','Pereira','Fernández','Martínez','Silva','López','García','Sosa','Suárez']],
+    'Croacia':[['Luka','Ivan','Marko','Josip','Ante','Mateo','Petar','Lovro','Filip','Marin'],['Horvat','Kovačević','Babić','Marić','Jurić','Kovačić','Vuković','Knežević','Matić','Pavlović']],
+    'Serbia':[['Luka','Nikola','Stefan','Marko','Miloš','Filip','Aleksa','Nemanja','Uroš','Vuk'],['Jovanović','Petrović','Nikolić','Marković','Đorđević','Stojanović','Ilić','Pavlović','Milošević','Popović']],
+    'Dinamarca':[['William','Oscar','Noah','Emil','Oliver','Lucas','Victor','Magnus','Mikkel','Mathias'],['Jensen','Nielsen','Hansen','Pedersen','Andersen','Christensen','Larsen','Sørensen','Rasmussen','Jørgensen']],
+    'Suecia':[['William','Oscar','Hugo','Lucas','Liam','Oliver','Elias','Noah','Viktor','Anton'],['Andersson','Johansson','Karlsson','Nilsson','Eriksson','Larsson','Olsson','Persson','Svensson','Gustafsson']],
+    'Noruega':[['Emil','Noah','Oliver','Isak','Jakob','Henrik','Magnus','Sander','Oskar','Mathias'],['Hansen','Johansen','Olsen','Larsen','Andersen','Pedersen','Nilsen','Kristiansen','Jensen','Karlsen']],
+    'Polonia':[['Jakub','Kacper','Antoni','Jan','Filip','Szymon','Mikołaj','Mateusz','Adam','Bartosz'],['Nowak','Kowalski','Wiśniewski','Wójcik','Kowalczyk','Kamiński','Lewandowski','Zieliński','Szymański','Woźniak']],
+    'Turquía':[['Emir','Yusuf','Efe','Ömer','Arda','Kerem','Mert','Ali','Burak','Can'],['Yılmaz','Kaya','Demir','Çelik','Şahin','Yıldız','Yıldırım','Öztürk','Aydın','Özdemir']]
+  };
+  const YOUTH_PROFILE_V122={
+    'España':{label:'Técnica y asociación',positions:['CM','CAM','LW','RW','CDM','ST','RB','LB']},
+    'Francia':{label:'Potencia y versatilidad',positions:['CB','CM','CDM','LW','RW','ST','RB','LB']},
+    'Inglaterra':{label:'Ritmo e intensidad',positions:['ST','RW','LW','CM','RB','LB','CB','GK']},
+    'Alemania':{label:'Orden y físico',positions:['CB','CDM','CM','ST','GK','RB','LB','CAM']},
+    'Italia':{label:'Lectura táctica',positions:['CB','GK','CDM','CM','RB','LB','ST','CAM']},
+    'Portugal':{label:'Técnica y desequilibrio',positions:['LW','RW','CAM','CM','ST','RB','LB','CB']},
+    'Países Bajos':{label:'Técnica y polivalencia',positions:['CM','CAM','CB','LW','RW','ST','CDM','RB']},
+    'Bélgica':{label:'Talento mixto',positions:['CM','CAM','RW','LW','CB','ST','CDM','GK']},
+    'Brasil':{label:'Creatividad ofensiva',positions:['LW','RW','CAM','ST','CM','RB','LB','CDM']},
+    'Argentina':{label:'Carácter y técnica',positions:['CAM','ST','RW','LW','CM','CDM','CB','LB']},
+    'Uruguay':{label:'Competitividad',positions:['ST','CB','CDM','CM','RB','LB','GK','RW']},
+    'Croacia':{label:'Centrocampo técnico',positions:['CM','CDM','CAM','CB','ST','RW','LB','GK']},
+    'Serbia':{label:'Físico y juego aéreo',positions:['CB','ST','CDM','CM','GK','RB','LW','CAM']},
+    'Dinamarca':{label:'Orden y versatilidad',positions:['CM','CB','CDM','RB','LB','ST','RW','GK']},
+    'Suecia':{label:'Físico y transición',positions:['ST','CB','CM','LW','RW','CDM','GK','RB']},
+    'Noruega':{label:'Potencia y verticalidad',positions:['ST','CM','CB','RW','LW','CDM','GK','LB']},
+    'Polonia':{label:'Físico y disciplina',positions:['ST','CB','GK','CDM','CM','RB','LB','CAM']},
+    'Turquía':{label:'Técnica y ataque',positions:['CAM','RW','LW','CM','ST','RB','LB','CDM']}
+  };
+  const SCOUT_FOCUS_V122={
+    any:{label:'Cualquier posición',positions:null},
+    gk:{label:'Porteros',positions:['GK']},
+    def:{label:'Defensas',positions:['CB','LB','RB','LWB','RWB']},
+    mid:{label:'Centrocampistas',positions:['CDM','CM','CAM','LM','RM']},
+    att:{label:'Atacantes',positions:['LW','RW','ST','CF']}
+  };
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.academy-top-v122{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:10px 0 12px}'+
+    '.academy-kpi-v122{padding:10px;border:1px solid var(--line);border-radius:11px;background:#09150f}.academy-kpi-v122 small{display:block;color:var(--muted);font-size:9px}.academy-kpi-v122 strong{font-size:18px}'+
+    '.academy-grid-v122{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-top:12px}.academy-card-v122{background:#09150f;border:1px solid var(--line);border-radius:13px;padding:11px}'+
+    '.academy-head-v122{display:flex;align-items:flex-start;gap:8px}.academy-head-v122 .spacer{flex:1}.academy-rating-v122{min-width:46px;padding:7px;border-radius:10px;text-align:center;background:#173522;font-weight:950;color:var(--accent)}'+
+    '.academy-tag-v122{display:inline-flex;margin-top:5px;padding:3px 6px;border:1px solid var(--line);border-radius:999px;font-size:9px;font-weight:900}.academy-tag-v122.gem{color:#ffd776;border-color:#755f29}.academy-tag-v122.good{color:#8ee8a8;border-color:#315f42}.academy-tag-v122.neutral{color:#c6d0ca}'+
+    '.academy-report-v122{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:9px 0}.academy-mini-v122{padding:7px;background:#0d1c14;border:1px solid #1d3025;border-radius:8px}.academy-mini-v122 small{display:block;color:var(--muted);font-size:9px}.academy-mini-v122 strong{font-size:12px}'+
+    '.academy-bar-v122{height:7px;background:#17251e;border-radius:99px;overflow:hidden;margin-top:5px}.academy-bar-v122 i{display:block;height:100%;background:var(--accent);border-radius:99px}'+
+    '.academy-actions-v122{display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:9px}.academy-scout-progress-v122{margin-top:9px;padding:9px;border:1px solid var(--line);border-radius:9px;background:#09150f}'+
+    '.academy-ai-row-v122{display:grid;grid-template-columns:minmax(160px,1fr) minmax(130px,.8fr) auto;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)}'+
+    '@media(max-width:760px){.academy-top-v122{grid-template-columns:1fr 1fr}.academy-actions-v122{grid-template-columns:1fr}.academy-ai-row-v122{grid-template-columns:1fr auto}.academy-ai-row-v122>div:nth-child(2){grid-column:1/-1}}';
+  document.head.appendChild(style);
+
+  function academyStateV122(){
+    S.academyV122=S.academyV122||{lastWeek:null,history:[],aiPromotions:[],aiSeason:null,identifiedGems:0};
+    S.academyV122.history=S.academyV122.history||[];
+    S.academyV122.aiPromotions=S.academyV122.aiPromotions||[];
+    return S.academyV122;
+  }
+  function youthProfileV122(nation){return YOUTH_PROFILE_V122[nation]||{label:'Perfil equilibrado',positions:['GK','CB','LB','RB','CDM','CM','CAM','LW','RW','ST']}}
+  function youthNameV122(nation){
+    const pools=YOUTH_NAMES_V122[nation]||[YOUTH_FIRST,YOUTH_LAST];
+    return pick(pools[0])+' '+pick(pools[1]);
+  }
+  function youthPositionV122(nation,focus){
+    const fp=SCOUT_FOCUS_V122[focus||'any']?.positions;
+    const pool=fp&&fp.length?fp:youthProfileV122(nation).positions;
+    return pick(pool);
+  }
+  function initYouthV122(y){
+    if(!y)return;
+    y.scoutConfidence=Number.isFinite(y.scoutConfidence)?y.scoutConfidence:clamp(y.scouted?82:48,25,96);
+    y.academyXPV122=Number.isFinite(y.academyXPV122)?y.academyXPV122:0;
+    y.academySeasonGainV122=Number.isFinite(y.academySeasonGainV122)?y.academySeasonGainV122:0;
+    y.academyJoinedV122=y.academyJoinedV122||S.date;
+    y.scoutDaysV122=y.scoutDaysV122||30;
+    y.personality=y.personality||V7_PERSONALITIES[hashV7(String(y.id||y.name))%V7_PERSONALITIES.length];
+    y.hiddenGemV122=typeof y.hiddenGemV122==='boolean'?y.hiddenGemV122:((y.potential||0)>=89&&(y.overall||0)<=63);
+    y.academyNotifiedV122=y.academyNotifiedV122||0;
+  }
+  function ensureAcademyV122(){
+    if(!S)return;
+    S.youth=S.youth||[];
+    academyStateV122();
+    for(const y of S.youth)initYouthV122(y);
+  }
+  function makeYouthV122(nation=S.country,quality=1,days=60,focus='any'){
+    const q=clamp(Number(quality||1),1,5);
+    const age=rnd(15,18);
+    let overall=clamp(47+rnd(0,11)+q+(Math.random()<.18?rnd(1,3):0),47,69);
+    let potential=clamp(overall+rnd(10,23)+Math.floor(q/2),65,94);
+    const gemChance=.008+q*.006+Math.min(90,days)/9000;
+    const gem=Math.random()<gemChance;
+    if(gem)potential=clamp(Math.max(potential,88)+rnd(1,5),72,95);
+    const confidence=clamp(27+q*7+(days>=90?25:days>=60?17:8)+rnd(-6,6),28,94);
+    const y={
+      id:'Y2'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+      name:youthNameV122(nation),
+      positions:youthPositionV122(nation,focus),
+      overall,potential,age,nation,scouted:confidence>=82,scoutConfidence:confidence,
+      scoutDaysV122:days,scoutFocusV122:focus,personality:pick(V7_PERSONALITIES),
+      academyXPV122:0,academySeasonGainV122:0,academyJoinedV122:S.date,
+      hiddenGemV122:gem||((potential>=89)&&(overall<=63))
+    };
+    return y;
+  }
+  makeYouthV7=function(nation=S.country,quality=1){return makeYouthV122(nation,quality,60,'any')};
+
+  function potentialRangeV122(y){
+    initYouthV122(y);
+    const c=clamp(y.scoutConfidence||45,25,100);
+    if(c>=95)return String(y.potential);
+    const noiseSpan=Math.max(0,Math.round((100-c)/20));
+    const h=hashV7(String(y.id)+'|pot');
+    const noise=noiseSpan?((h%(noiseSpan*2+1))-noiseSpan):0;
+    const center=clamp((y.potential||70)+noise,Math.max(y.overall+3,55),95);
+    const width=Math.max(2,Math.round(11-c*.09));
+    return Math.max(y.overall+3,center-width)+'–'+Math.min(95,center+width);
+  }
+  function overallRangeV122(y){
+    const c=y.scoutConfidence||45;
+    const w=c>=88?0:c>=70?1:c>=50?2:3;
+    if(!w)return String(y.overall);
+    return Math.max(40,y.overall-w)+'–'+Math.min(75,y.overall+w);
+  }
+  function scoutLevelLabelV122(y){
+    const c=y.scoutConfidence||0;
+    if(c>=90)return'Informe detallado';
+    if(c>=72)return'Informe avanzado';
+    if(c>=52)return'Informe parcial';
+    return'Primeras impresiones';
+  }
+  function talentTagV122(y){
+    const c=y.scoutConfidence||0;
+    if(c>=78&&y.hiddenGemV122)return{label:'💎 Joya detectada',cls:'gem'};
+    if(c>=82&&(y.potential||0)>=86)return{label:'⭐ Gran proyección',cls:'good'};
+    if(c>=70&&(y.potential||0)-(y.overall||0)>=18)return{label:'📈 Mucho margen',cls:'good'};
+    return{label:scoutLevelLabelV122(y),cls:'neutral'};
+  }
+  function academyNeedV122(y){return Math.max(90,100+Math.max(0,(y.overall||50)-52)*2.8)}
+  function academyProgressV122(y){return Math.round(clamp((y.academyXPV122||0)/academyNeedV122(y)*100,0,100))}
+  function academyWeeklyV122(date){
+    ensureAcademyV122();
+    const d=new Date(date+'T12:00:00Z');
+    if(d.getUTCDay()!==1)return;
+    const st=academyStateV122();
+    if(st.lastWeek===date)return;
+    st.lastWeek=date;
+    const coach=staffEffectV7('youth'),scout=staffEffectV7('scouting');
+    for(const y of S.youth){
+      initYouthV122(y);
+      y.scoutConfidence=clamp((y.scoutConfidence||45)+1+Math.floor(scout/2),25,98);
+      if(y.overall>=y.potential)continue;
+      const ageFactor=y.age<=16?1.18:y.age===17?1.08:y.age===18?.96:.82;
+      const gap=Math.max(0,y.potential-y.overall);
+      const gapFactor=clamp(.55+gap/18,.55,1.45);
+      const personality=y.personality==='Profesional'?1.12:y.personality==='Ambicioso'?1.08:y.personality==='Volátil'?.90:1;
+      y.academyXPV122+=(1.35+coach*.58)*ageFactor*gapFactor*personality;
+      const need=academyNeedV122(y);
+      if(y.academyXPV122>=need&&y.overall<y.potential){
+        y.academyXPV122-=need;
+        y.overall++;
+        y.academySeasonGainV122=(y.academySeasonGainV122||0)+1;
+        st.history.unshift({date,player:y.name,id:y.id,overall:y.overall,type:'growth'});
+        st.history=st.history.slice(0,80);
+        if((y.academySeasonGainV122||0)>=2&&y.academyNotifiedV122<2){
+          y.academyNotifiedV122=2;
+          addNews('Progreso en la cantera',y.name+' está destacando en la academia y alcanza una valoración estimada de '+overallRangeV122(y)+'.','cantera');
+        }
+      }
+      if(y.hiddenGemV122&&y.scoutConfidence>=78&&!y.gemRevealedV122){
+        y.gemRevealedV122=true;
+        st.identifiedGems=(st.identifiedGems||0)+1;
+        addNews('Joya detectada',y.name+' ha convencido a los técnicos: los informes apuntan a un techo especialmente alto.','cantera');
+      }
+    }
+  }
+  function academySeasonEndV122(newDate){
+    ensureAcademyV122();
+    const kept=[];
+    const released=[];
+    for(const y of S.youth){
+      initYouthV122(y);
+      if((y.academySeasonGainV122||0)>=2&&y.age<=17&&y.potential<95&&Math.random()<.18)y.potential++;
+      y.age++;
+      y.academySeasonGainV122=0;
+      y.academyNotifiedV122=0;
+      if(y.age>=20)released.push(y);else kept.push(y);
+    }
+    S.youth=kept;
+    if(released.length){
+      const notable=released.filter(y=>(y.potential||0)>=84).slice(0,2);
+      if(notable.length)addNews('Salidas de la academia',notable.map(y=>y.name).join(' y ')+' dejan la cantera al superar la edad de formación sin subir al primer equipo.','cantera');
+    }
+    academyStateV122().lastWeek=null;
+  }
+  function youthReleaseV122(id){
+    ensureAcademyV122();
+    const y=S.youth.find(x=>String(x.id)===String(id));
+    if(!y)return;
+    S.youth=S.youth.filter(x=>String(x.id)!==String(id));
+    academyStateV122().history.unshift({date:S.date,player:y.name,id:y.id,type:'released'});
+    toast(y.name+' deja la academia');
+    save();
+    render('academy');
+  }
+
+  completeScoutV7=function(date){
+    ensureAcademyV122();
+    const a=S.scoutingAssignment;
+    if(!a||a.complete||date<a.ends)return;
+    a.complete=true;
+    const quality=staffEffectV7('scouting');
+    const days=Number(a.days||Math.max(30,dateDiff(a.starts||date,a.ends||date))||60);
+    const slots=Math.max(0,ACADEMY_CAP_V122-S.youth.length);
+    const planned=(days>=90?8:days>=60?6:4)+(quality>=4?1:0);
+    const count=Math.min(slots,planned);
+    const batch=Array.from({length:count},()=>makeYouthV122(a.country,quality,days,a.focus||'any'));
+    S.youth.push(...batch);
+    S.scoutReports=S.scoutReports||[];
+    S.scoutReports.unshift({date,country:a.country,count:batch.length,quality,days,focus:a.focus||'any'});
+    S.scoutReports=S.scoutReports.slice(0,40);
+    const st=academyStateV122();
+    st.history.unshift({date,country:a.country,count:batch.length,type:'scout'});
+    if(count){
+      pushDayEventV7(date,{type:'scouting',text:'El ojeador vuelve de '+a.country+' con '+batch.length+' informes juveniles.'});
+      addNews('Informe de cantera','La red de captación vuelve de '+a.country+' con '+batch.length+' jugadores para la academia.','cantera');
+    }else{
+      pushDayEventV7(date,{type:'scouting',text:'El ojeador vuelve, pero la academia está completa.'});
+      addNews('Academia completa','No hay plazas libres para incorporar nuevos juveniles.','cantera');
+    }
+  };
+
+  const promoteYouthV122Base=promoteYouth;
+  promoteYouth=function(id){
+    ensureAcademyV122();
+    const y=S.youth.find(x=>String(x.id)===String(id));
+    if(!y)return;
+    if(y.age<16){toast('Debe cumplir 16 años antes de subir al primer equipo');return}
+    const origin={...y};
+    const before=new Set(S.players.map(p=>String(p.id)));
+    promoteYouthV122Base(id);
+    const p=S.players.find(x=>!before.has(String(x.id))&&x.club===S.club)||S.players.find(x=>String(x.id)===String(id)&&x.club===S.club);
+    if(p){
+      p.personality=origin.personality||p.personality||'Profesional';
+      p.hierarchy=hierarchyV7(p);
+      p.promisedRole=p.promisedRole||'Promesa';
+      p.releaseClause=p.releaseClause||Math.max(500000,Math.round((p.value||500000)*2.2));
+      p.academyProductV122=true;
+      p.academyClubV122=S.club;
+      p.academyJoinedV122=origin.academyJoinedV122;
+      p.scoutConfidenceV122=origin.scoutConfidence||50;
+      p.devSeasonStartV119=Number.isFinite(p.devSeasonStartV119)?p.devSeasonStartV119:p.overall;
+      p.devSeasonGainV119=Number.isFinite(p.devSeasonGainV119)?p.devSeasonGainV119:0;
+      p.devXPV119=Number.isFinite(p.devXPV119)?p.devXPV119:0;
+      p.devHistoryV119=Array.isArray(p.devHistoryV119)?p.devHistoryV119:[];
+      addNews('Producto de la academia',p.name+' firma su primer contrato profesional con '+S.club+'.','cantera');
+    }
+    save();
+  };
+
+  function aiYouthPlayerV122(club,newDate){
+    const pf=window.clubBoardProfileV117?.(club)||{youth:3};
+    const lid=DB.clubs.get(club)?.leagueId;
+    const nation=EURO_LEAGUES[lid]?.country||'España';
+    const y=makeYouthV122(nation,pf.youth||3,90,'any');
+    const cr=clubRatingDB(club);
+    const boost=clamp(Math.round((cr-68)/6),-2,5);
+    y.overall=clamp(y.overall+boost,48,72);
+    y.potential=clamp(Math.max(y.potential,y.overall+5),68,95);
+    const years=y.age<=17?5:4;
+    return{
+      id:'AIY'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+      name:y.name,full:y.name,positions:y.positions,overall:y.overall,potential:y.potential,
+      value:Math.max(180000,Math.round((y.overall-44)*(y.overall-44)*6500)),
+      wage:Math.max(600,Math.round((y.overall-45)*115/100)*100),
+      age:y.age,club,leagueId:lid,leagueName:EURO_LEAGUES[lid]?.name||'',leagueLevel:EURO_LEAGUES[lid]?.tier||1,
+      nation,foot:Math.random()<.22?'Left':'Right',fitness:100,morale:72,goals:0,assists:0,cards:0,
+      injuredUntil:null,suspension:0,contractUntil:String(contractYear(newDate)+years)+'-06-30',
+      squadRole:'Promesa',hierarchy:'Promesa',personality:y.personality,appearances:0,starts:0,minutes:0,
+      ratingSum:0,avgRating:0,cleanSheets:0,individualFocus:'General',individualProgress:0,wantsOut:false,
+      parentClub:null,loanUntil:null,optionToBuy:0,releaseClause:Math.max(500000,Math.round(Math.max(180000,(y.overall-44)*(y.overall-44)*6500)*2.1)),
+      aiAcademyProductV122:true,academyClubV122:club
+    };
+  }
+  function generateAIYouthClassV122(newDate){
+    const st=academyStateV122();
+    const key=String(newDate).slice(0,4);
+    if(st.aiSeason===key)return;
+    st.aiSeason=key;
+    const candidates=[];
+    for(const [club] of DB.clubs){
+      if(club===S.club)continue;
+      const pf=window.clubBoardProfileV117?.(club)||{youth:3};
+      const h=hashV7(club+'|'+key+'|academy');
+      candidates.push({club,score:(pf.youth||3)*12+(h%31)+clubRatingDB(club)*.08});
+    }
+    candidates.sort((a,b)=>b.score-a.score);
+    const selected=candidates.slice(0,Math.min(32,candidates.length));
+    const promoted=[];
+    for(const x of selected){
+      const p=aiYouthPlayerV122(x.club,newDate);
+      S.players.push(p);
+      promoted.push({date:newDate,club:x.club,player:p.name,age:p.age,overall:p.overall,positions:p.positions});
+    }
+    st.aiPromotions.unshift(...promoted);
+    st.aiPromotions=st.aiPromotions.slice(0,100);
+    if(promoted.length)st.history.unshift({date:newDate,type:'ai_class',count:promoted.length});
+  }
+
+  const seasonDevV122Base=window.applySeasonDevelopmentV119;
+  window.applySeasonDevelopmentV119=function(newDate){
+    if(typeof seasonDevV122Base==='function')seasonDevV122Base(newDate);
+    ensureAcademyV122();
+    academySeasonEndV122(newDate);
+    generateAIYouthClassV122(newDate);
+  };
+
+  const ensureV122Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV122Base();
+    if(!S)return;
+    ensureAcademyV122();
+  };
+
+  const worldDayV122Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV122Base(date);
+    ensureV7State();
+    academyWeeklyV122(date);
+  };
+
+  function scoutingCostV122(days){
+    const q=staffEffectV7('scouting');
+    return Math.round(70000+Number(days||60)*2500+q*50000);
+  }
+  function assignmentProgressV122(a){
+    if(!a||a.complete)return 100;
+    const total=Math.max(1,dateDiff(a.starts,a.ends));
+    const done=clamp(dateDiff(a.starts,S.date),0,total);
+    return Math.round(done/total*100);
+  }
+
+  renderAcademyV7=function(){
+    ensureV7State();
+    const a=S.scoutingAssignment,ys=(S.youth||[]).slice().sort((x,y)=>{
+      const tx=(x.scoutConfidence||0)>=78&&x.hiddenGemV122?1:0,ty=(y.scoutConfidence||0)>=78&&y.hiddenGemV122?1:0;
+      return ty-tx||(y.academySeasonGainV122||0)-(x.academySeasonGainV122||0)||(y.potential||0)-(x.potential||0);
+    });
+    const growing=ys.filter(y=>(y.academySeasonGainV122||0)>0).length;
+    const gems=ys.filter(y=>y.hiddenGemV122&&(y.scoutConfidence||0)>=78).length;
+    const detailed=ys.filter(y=>(y.scoutConfidence||0)>=90).length;
+    const profile=a?youthProfileV122(a.country):null;
+    let scoutStatus='';
+    if(a&&!a.complete){
+      const pct=assignmentProgressV122(a);
+      scoutStatus='<div class="academy-scout-progress-v122"><div class="row"><strong>🔎 Ojeando en '+esc(a.country)+'</strong><span class="spacer"></span><span class="badge">'+pct+'%</span></div><div class="muted">'+esc(SCOUT_FOCUS_V122[a.focus||'any']?.label||'Cualquier posición')+' · '+esc(profile?.label||'Perfil equilibrado')+' · regreso '+dateStr(a.ends)+'</div><div class="academy-bar-v122"><i style="width:'+pct+'%"></i></div></div>';
+    }else if(a&&a.complete){
+      scoutStatus='<div class="academy-scout-progress-v122"><strong>✅ Última misión completada</strong><div class="muted">'+esc(a.country)+' · puedes enviar de nuevo al ojeador.</div></div>';
+    }
+
+    els.view.innerHTML=
+      '<div class="row"><div><h2 style="margin:0">Cantera 2.0</h2><div class="muted">Descubre, sigue y desarrolla talento antes de subirlo al primer equipo.</div></div><span class="spacer"></span><span class="badge">Scouting '+staffEffectV7('scouting')+'/5 · Formación '+staffEffectV7('youth')+'/5</span></div>'+
+      '<div class="academy-top-v122">'+
+        '<div class="academy-kpi-v122"><small>PLAZAS</small><strong>'+ys.length+'/'+ACADEMY_CAP_V122+'</strong></div>'+
+        '<div class="academy-kpi-v122"><small>MEJORANDO ESTA TEMP.</small><strong>'+growing+'</strong></div>'+
+        '<div class="academy-kpi-v122"><small>JOYAS IDENTIFICADAS</small><strong>'+gems+'</strong></div>'+
+        '<div class="academy-kpi-v122"><small>INFORMES DETALLADOS</small><strong>'+detailed+'</strong></div>'+
+      '</div>'+
+      '<div class="card"><div class="row"><div><h3 style="margin:0">Enviar ojeador</h3><div class="muted">La duración mejora la cantidad y precisión de los informes; el país cambia el tipo de perfiles que aparecen.</div></div><span class="spacer"></span><strong id="scoutCostV122">'+euro(scoutingCostV122(60))+'</strong></div>'+
+        '<div class="scout-controls" style="margin-top:10px"><select id="scoutCountryV122">'+V7_SCOUT_COUNTRIES.map(c=>'<option '+(c===S.country?'selected':'')+'>'+esc(c)+'</option>').join('')+'</select>'+
+        '<select id="scoutFocusV122">'+Object.entries(SCOUT_FOCUS_V122).map(([k,v])=>'<option value="'+k+'">'+esc(v.label)+'</option>').join('')+'</select>'+
+        '<select id="scoutDaysV122"><option value="30">30 días</option><option value="60" selected>60 días</option><option value="90">90 días</option></select>'+
+        '<button class="btn primary" id="sendScoutV122" '+(a&&!a.complete?'disabled':'')+'>🔎 Enviar</button></div>'+scoutStatus+
+      '</div>'+
+      (ys.length?'<div class="academy-grid-v122">'+ys.map(y=>{
+        initYouthV122(y);
+        const tag=talentTagV122(y),pct=academyProgressV122(y),pot=potentialRangeV122(y),ovr=overallRangeV122(y);
+        return '<div class="academy-card-v122">'+
+          '<div class="academy-head-v122"><div><strong>'+esc(y.name)+'</strong><div class="muted">'+y.age+' años · '+esc(y.positions)+' · '+esc(y.nation)+'</div><span class="academy-tag-v122 '+tag.cls+'">'+esc(tag.label)+'</span></div><span class="spacer"></span><div class="academy-rating-v122">'+ovr+'</div></div>'+
+          '<div class="academy-report-v122">'+
+            '<div class="academy-mini-v122"><small>PROYECCIÓN</small><strong>'+pot+'</strong></div>'+
+            '<div class="academy-mini-v122"><small>CONFIANZA</small><strong>'+Math.round(y.scoutConfidence||0)+'%</strong></div>'+
+            '<div class="academy-mini-v122"><small>PERSONALIDAD</small><strong>'+esc(y.personality||'—')+'</strong></div>'+
+            '<div class="academy-mini-v122"><small>ESTA TEMPORADA</small><strong>+'+(y.academySeasonGainV122||0)+' OVR</strong></div>'+
+          '</div>'+
+          '<div class="muted">Desarrollo en academia · '+pct+'%</div><div class="academy-bar-v122"><i style="width:'+pct+'%"></i></div>'+
+          '<div class="academy-actions-v122"><button class="btn primary promoteV122" data-id="'+esc(String(y.id))+'" '+(y.age<16?'disabled':'')+'>'+(y.age<16?'Disponible a los 16':'Ascender al primer equipo')+'</button><button class="btn ghost releaseYouthV122" data-id="'+esc(String(y.id))+'">Descartar</button></div>'+
+        '</div>';
+      }).join('')+'</div>':'<div class="card" style="margin-top:12px"><div class="empty">La academia está vacía. Envía un ojeador para encontrar juveniles.</div></div>');
+
+    const daysEl=$('#scoutDaysV122'),costEl=$('#scoutCostV122');
+    if(daysEl&&costEl)daysEl.onchange=()=>costEl.textContent=euro(scoutingCostV122(+daysEl.value));
+    const send=$('#sendScoutV122');
+    if(send)send.onclick=()=>{
+      const country=$('#scoutCountryV122').value,focus=$('#scoutFocusV122').value,days=+$('#scoutDaysV122').value,cost=scoutingCostV122(days);
+      if(S.youth.length>=ACADEMY_CAP_V122){toast('La academia está completa');return}
+      if(S.budget<cost){toast('Presupuesto insuficiente');return}
+      S.budget-=cost;
+      S.scoutingAssignment={country,focus,days,cost,starts:S.date,ends:isoAdd(S.date,days),complete:false};
+      addNews('Ojeador enviado','La red de captación viaja a '+country+' durante '+days+' días buscando '+String(SCOUT_FOCUS_V122[focus]?.label||'talento').toLowerCase()+'.','cantera');
+      save();
+      render('academy');
+    };
+    els.view.querySelectorAll('.promoteV122').forEach(b=>b.onclick=()=>{promoteYouth(b.dataset.id);unlockAchievementV7('academy')});
+    els.view.querySelectorAll('.releaseYouthV122').forEach(b=>b.onclick=()=>youthReleaseV122(b.dataset.id));
+  };
+
+  const renderWorldV122Base=renderWorldV7;
+  renderWorldV7=function(){
+    renderWorldV122Base();
+    ensureV7State();
+    const rows=academyStateV122().aiPromotions.slice(0,8);
+    const card=document.createElement('div');
+    card.className='card';
+    card.style.marginTop='14px';
+    card.innerHTML='<div class="row"><h3 style="margin:0">🌱 Canteras del mundo</h3><span class="spacer"></span><span class="badge">Academias IA</span></div>'+
+      (rows.length?rows.map(x=>'<div class="academy-ai-row-v122"><div><strong>'+esc(x.player)+'</strong><div class="muted">'+esc(x.club)+'</div></div><div>'+x.age+' años · '+esc(x.positions)+'</div><span class="badge">OVR '+x.overall+'</span></div>').join(''):'<div class="empty">Las nuevas promociones de academias aparecerán al comenzar las próximas temporadas.</div>');
+    els.view.appendChild(card);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
