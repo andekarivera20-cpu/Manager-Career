@@ -8886,6 +8886,346 @@ loadDB=async function(){
 })();
 
 
+
+// ===== PLAYER SCOUTING 2.0 10.23 =====
+// Jugadores reales con notoriedad: estrellas conocidas desde el inicio y futbolistas
+// menos conocidos con informes progresivos que se desbloquean por fases.
+(function(){
+  const FAMOUS_NAMES_V123=[
+    'mbappe','haaland','bellingham','vinicius','vinicius junior','rodri','lamine yamal','yamal',
+    'salah','kane','pedri','musiala','saka','de bruyne','lewandowski','griezmann','valverde',
+    'donnarumma','courtois','alisson','van dijk','rudiger','saliba','odegaard','wirtz','palmer',
+    'lautaro','rodrygo','raphinha','bruno fernandes','bernardo silva','rice','foden','kvaratskhelia',
+    'osimhen','mikel oyarzabal','oyarzabal'
+  ];
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.scout-overview-v123{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:10px 0 12px}'+
+    '.scout-kpi-v123{padding:9px;border:1px solid var(--line);border-radius:10px;background:#09150f}.scout-kpi-v123 small{display:block;color:var(--muted);font-size:9px}.scout-kpi-v123 strong{font-size:16px}'+
+    '.scout-card-v123{margin:10px 0 12px}.scout-active-v123{display:grid;gap:6px;margin-top:9px}.scout-active-row-v123{display:grid;grid-template-columns:minmax(160px,1fr) minmax(120px,.7fr) auto;gap:8px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:9px;background:#09150f}'+
+    '.scout-progress-v123{height:7px;border-radius:99px;background:#17251e;overflow:hidden;margin-top:4px}.scout-progress-v123 i{display:block;height:100%;background:var(--accent);border-radius:99px}'+
+    '.scout-level-v123{display:inline-flex;align-items:center;gap:4px;padding:3px 6px;border:1px solid var(--line);border-radius:999px;font-size:9px;font-weight:900}.scout-level-v123.full{color:#8ee8a8;border-color:#315f42}.scout-level-v123.high{color:#9ad5ff;border-color:#315a73}.scout-level-v123.mid{color:#ffd08a;border-color:#72542d}.scout-level-v123.low{color:#c6d0ca}'+
+    '.scout-lock-v123{color:#78857d;font-style:italic}.scout-result-meta-v123{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:3px}.scout-actions-v123{display:flex;gap:5px;flex-wrap:wrap}'+
+    '.scout-report-v123{padding:10px;margin:0 0 11px;border:1px solid var(--line);border-radius:10px;background:#09150f}.scout-report-grid-v123{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}.scout-report-cell-v123{padding:7px;border:1px solid #1d3025;border-radius:8px;background:#0d1c14}.scout-report-cell-v123 small{display:block;color:var(--muted);font-size:9px}.scout-report-cell-v123 strong{font-size:11px}'+
+    '.scout-warning-v123{margin-top:8px;padding:8px;border:1px solid #6d5528;border-radius:8px;background:#211b0d;color:#ffd08a;font-size:10px}'+
+    '@media(max-width:760px){.scout-overview-v123{grid-template-columns:1fr 1fr}.scout-active-row-v123{grid-template-columns:1fr auto}.scout-active-row-v123>div:nth-child(2){grid-column:1/-1}.scout-report-grid-v123{grid-template-columns:1fr 1fr}}';
+  document.head.appendChild(style);
+
+  function scoutStateV123(){
+    S.playerScoutingV123=S.playerScoutingV123||{reports:{},assignments:[],history:[]};
+    S.playerScoutingV123.reports=S.playerScoutingV123.reports||{};
+    S.playerScoutingV123.assignments=S.playerScoutingV123.assignments||[];
+    S.playerScoutingV123.history=S.playerScoutingV123.history||[];
+    return S.playerScoutingV123;
+  }
+  function playerKeyV123(p){return String(p?.id??p?.name??'')}
+  function starNameV123(p){
+    const n=normName(p?.name||'');
+    return FAMOUS_NAMES_V123.some(x=>n.includes(normName(x)));
+  }
+  function fameScoreV123(p){
+    if(!p)return 0;
+    if(starNameV123(p))return 100;
+    const o=Number(p.overall||50),v=Number(p.value||0);
+    let clubR=65;
+    try{clubR=p.club&&p.club!=='Agente libre'?clubRatingDB(p.club):65}catch(e){}
+    let score=Math.max(0,o-60)*2.25+Math.min(24,v/2500000)+Math.max(0,clubR-65)*.8;
+    if(p.age<=21&&o>=76)score+=6;
+    if(p.age<=23&&v>=25000000)score+=5;
+    if(p.club===S.club)score=100;
+    return clamp(score,0,100);
+  }
+  function fameTierV123(p){
+    const f=fameScoreV123(p);
+    if(f>=80)return{label:'Figura mundial',base:100,days:0,cls:'full'};
+    if(f>=62)return{label:'Muy conocido',base:74,days:8,cls:'high'};
+    if(f>=48)return{label:'Conocido',base:52,days:17,cls:'high'};
+    if(f>=34)return{label:'Poco conocido',base:30,days:29,cls:'mid'};
+    return{label:'Desconocido',base:12,days:46,cls:'low'};
+  }
+  function reportV123(p){
+    const st=scoutStateV123(),key=playerKeyV123(p);
+    let r=st.reports[key];
+    const tier=fameTierV123(p);
+    if(!r){
+      r=st.reports[key]={
+        playerId:key,confidence:tier.base,started:null,completed:tier.base>=100?S.date:null,
+        status:tier.base>=100?'complete':'unscouted',fame:fameScoreV123(p),tier:tier.label,
+        lastMilestone:Math.floor(tier.base/25)*25
+      };
+    }else if(tier.base>r.confidence&&!r.started){
+      r.confidence=tier.base;
+      if(r.confidence>=100){r.confidence=100;r.status='complete';r.completed=r.completed||S.date}
+    }
+    r.fame=fameScoreV123(p);r.tier=tier.label;
+    return r;
+  }
+  function scoutingSlotsV123(){return 1+Math.floor((staffEffectV7('scouting')-1)/2)}
+  function activeAssignmentV123(id){return scoutStateV123().assignments.find(a=>a.playerId===String(id)&&a.status==='active')}
+  function daysNeededV123(p){
+    const tier=fameTierV123(p),staff=staffEffectV7('scouting');
+    if(tier.days<=0)return 0;
+    const modifier=1-(staff-1)*.10;
+    const variation=(hashV7(playerKeyV123(p)+'|scout-days')%7)-3;
+    return Math.max(3,Math.round((tier.days+variation)*modifier));
+  }
+  function startPlayerScoutV123(id){
+    ensureV7State();
+    const p=S.players.find(x=>String(x.id)===String(id));
+    if(!p||p.club===S.club)return;
+    const st=scoutStateV123(),r=reportV123(p);
+    if(r.confidence>=100){toast('Ya tienes un informe completo de '+p.name);return}
+    if(activeAssignmentV123(id)){toast('El ojeador ya está siguiendo a '+p.name);return}
+    const active=st.assignments.filter(a=>a.status==='active');
+    if(active.length>=scoutingSlotsV123()){toast('Todos tus ojeadores están ocupados');return}
+    const days=daysNeededV123(p);
+    const a={id:'PS'+Date.now()+Math.random().toString(36).slice(2,5),playerId:String(p.id),player:p.name,club:p.club,start:S.date,end:isoAdd(S.date,days),days,status:'active',startConfidence:r.confidence};
+    st.assignments.push(a);
+    r.started=S.date;r.status='scouting';r.assignmentId=a.id;
+    if(!(S.shortlist||[]).map(String).includes(String(p.id))){S.shortlist=S.shortlist||[];S.shortlist.push(p.id)}
+    S.inbox.unshift({date:S.date,text:'🔎 El equipo de scouting empieza a seguir a '+p.name+'. Informe estimado: '+days+' días.'});
+    save();
+    render('transfers');
+  }
+  function confidenceLabelV123(c){
+    if(c>=100)return{label:'Informe completo',cls:'full'};
+    if(c>=75)return{label:'Informe avanzado',cls:'high'};
+    if(c>=50)return{label:'Informe parcial',cls:'high'};
+    if(c>=25)return{label:'Primer informe',cls:'mid'};
+    return{label:'Casi desconocido',cls:'low'};
+  }
+  function progressScoutingV123(date){
+    const st=scoutStateV123();
+    for(const a of st.assignments.filter(x=>x.status==='active')){
+      const p=S.players.find(x=>String(x.id)===String(a.playerId));
+      if(!p){a.status='cancelled';continue}
+      const r=reportV123(p);
+      const total=Math.max(1,a.days||daysNeededV123(p));
+      const elapsed=clamp(dateDiff(a.start,date),0,total);
+      const pct=elapsed/total;
+      const old=Math.round(r.confidence||0);
+      r.confidence=clamp(Math.round((a.startConfidence||old)+(100-(a.startConfidence||old))*pct),0,100);
+      r.status=r.confidence>=100?'complete':'scouting';
+      const milestone=Math.min(100,Math.floor(r.confidence/25)*25);
+      if(milestone>=(r.lastMilestone||0)+25){
+        r.lastMilestone=milestone;
+        const msg=milestone>=100?'Informe completo de '+p.name+'.':milestone>=75?'El informe de '+p.name+' ya incluye proyección y detalles contractuales.':milestone>=50?'El informe de '+p.name+' ya permite valorar mejor su nivel y precio.':'Primeros datos útiles disponibles sobre '+p.name+'.';
+        S.inbox.unshift({date,text:'🔎 '+msg});
+        pushDayEventV7(date,{type:'scouting',text:msg});
+      }
+      if(r.confidence>=100||date>=a.end){
+        r.confidence=100;r.status='complete';r.completed=date;
+        a.status='complete';a.completed=date;
+        st.history.unshift({date,playerId:String(p.id),player:p.name,type:'complete',days:dateDiff(a.start,date)});
+        st.history=st.history.slice(0,100);
+        addNews('Informe de scouting completo','El departamento de scouting termina el seguimiento de '+p.name+'. Ya dispones de toda la información.','mercado');
+      }
+    }
+  }
+  function roundStepV123(v,step){return Math.max(step,Math.round(v/step)*step)}
+  function numRangeV123(actual,c,widthMax,min=0,max=999){
+    const w=Math.max(1,Math.ceil(widthMax*(1-clamp(c,0,100)/115)));
+    const shift=(hashV7(String(actual)+'|'+String(c)+'|range')%(w*2+1))-w;
+    const center=clamp(Math.round(actual+shift),min,max);
+    return Math.max(min,center-w)+'–'+Math.min(max,center+w);
+  }
+  function moneyRangeV123(actual,c){
+    if(c>=100)return euro(actual||0);
+    const a=Math.max(0,actual||0);
+    const pct=c>=75?.10:c>=50?.18:c>=30?.28:.40;
+    const seed=(hashV7(String(a)+'|'+String(c)+'|money')%17-8)/100;
+    const center=Math.max(0,a*(1+seed));
+    const low=roundStepV123(center*(1-pct),a>=10000000?1000000:a>=1000000?250000:50000);
+    const high=roundStepV123(center*(1+pct),a>=10000000?1000000:a>=1000000?250000:50000);
+    return euro(low)+'–'+euro(high);
+  }
+  function wageRangeV123(actual,c){
+    if(c>=100)return euro(actual||0)+'/sem';
+    const a=Math.max(100,actual||1000),pct=c>=75?.12:c>=55?.20:.32;
+    const low=roundStepV123(a*(1-pct),100),high=roundStepV123(a*(1+pct),100);
+    return euro(low)+'–'+euro(high)+'/sem';
+  }
+  function fieldV123(p,field,r){
+    const c=Math.round(r.confidence||0);
+    if(field==='overall'){
+      if(c<25)return'—';
+      return c>=100?String(p.overall):numRangeV123(p.overall,c,6,40,99);
+    }
+    if(field==='value'){
+      if(c<40)return'—';
+      return moneyRangeV123(p.value||0,c);
+    }
+    if(field==='wage'){
+      if(c<55)return'—';
+      return wageRangeV123(p.wage||0,c);
+    }
+    if(field==='contract'){
+      if(c<60)return'—';
+      return p.club==='Agente libre'?'Agente libre':String(p.contractUntil||'Sin confirmar');
+    }
+    if(field==='potential'){
+      if(c<70)return'—';
+      return c>=100?String(p.potential):numRangeV123(p.potential,c,7,50,95);
+    }
+    if(field==='personality'){
+      if(c<85)return'—';
+      return p.personality||'Sin datos';
+    }
+    if(field==='role'){
+      if(c<85)return'—';
+      return p.squadRole||p.hierarchy||'Rotación';
+    }
+    return'—';
+  }
+  function reportSummaryV123(p){
+    const r=reportV123(p),lab=confidenceLabelV123(r.confidence);
+    return{r,lab,ovr:fieldV123(p,'overall',r),value:fieldV123(p,'value',r),wage:fieldV123(p,'wage',r),potential:fieldV123(p,'potential',r),contract:fieldV123(p,'contract',r),personality:fieldV123(p,'personality',r)};
+  }
+  function scoutButtonHTMLV123(p){
+    const r=reportV123(p),a=activeAssignmentV123(p.id);
+    if(r.confidence>=100)return'<span class="scout-level-v123 full">✓ Conocido</span>';
+    if(a)return'<button class="btn ghost scoutPlayerV123" data-id="'+esc(String(p.id))+'" disabled>🔎 '+Math.round(r.confidence)+'%</button>';
+    return'<button class="btn ghost scoutPlayerV123" data-id="'+esc(String(p.id))+'">🔎 Ojeador</button>';
+  }
+  function searchResultsHTMLV123(res,open){
+    const desktop='<div class="tablewrap mobile-hide"><table><thead><tr><th>Jugador</th><th>Club</th><th>Pos.</th><th>Informe</th><th>OVR</th><th>Edad</th><th>Valor</th><th></th></tr></thead><tbody>'+
+      res.map(p=>{
+        const x=reportSummaryV123(p);
+        return '<tr><td><strong>'+esc(p.name)+'</strong><div class="scout-result-meta-v123"><span class="scout-level-v123 '+x.lab.cls+'">'+esc(x.lab.label)+' · '+Math.round(x.r.confidence)+'%</span><span class="muted">'+esc(x.r.tier)+'</span></div></td><td>'+esc(p.club)+'</td><td>'+esc(p.positions)+'</td><td>'+scoutButtonHTMLV123(p)+'</td><td>'+(x.ovr==='—'?'<span class="scout-lock-v123">?</span>':esc(x.ovr))+'</td><td>'+p.age+'</td><td>'+(x.value==='—'?'<span class="scout-lock-v123">Sin informe</span>':esc(x.value))+'</td><td><div class="scout-actions-v123"><button class="btn ghost watch" data-id="'+esc(String(p.id))+'">'+((S.shortlist||[]).map(String).includes(String(p.id))?'★':'☆')+'</button><button class="btn buy" data-id="'+esc(String(p.id))+'" '+(!open?'disabled':'')+'>Negociar</button></div></td></tr>';
+      }).join('')+'</tbody></table></div>';
+    const mobile='<div class="mobile-cards">'+res.map(p=>{
+      const x=reportSummaryV123(p);
+      return '<div class="market-card"><div class="market-card-head"><div><strong>'+esc(p.name)+'</strong><div class="muted">'+esc(p.club)+' · '+esc(p.positions)+'</div><div class="scout-result-meta-v123"><span class="scout-level-v123 '+x.lab.cls+'">'+esc(x.lab.label)+' '+Math.round(x.r.confidence)+'%</span></div></div><span class="rating">'+(x.ovr==='—'?'?':esc(x.ovr))+'</span></div><div class="player-card-grid"><div class="mini-kpi"><small>Edad</small><strong>'+p.age+'</strong></div><div class="mini-kpi"><small>Valor</small><strong>'+(x.value==='—'?'?':esc(x.value))+'</strong></div><div class="mini-kpi"><small>Potencial</small><strong>'+(x.potential==='—'?'?':esc(x.potential))+'</strong></div></div><div class="scout-actions-v123" style="margin-top:10px">'+scoutButtonHTMLV123(p)+'<button class="btn ghost watch" data-id="'+esc(String(p.id))+'">'+((S.shortlist||[]).map(String).includes(String(p.id))?'★ Siguiendo':'☆ Seguir')+'</button><button class="btn primary buy" data-id="'+esc(String(p.id))+'" '+(!open?'disabled':'')+'>Negociar</button></div></div>';
+    }).join('')+'</div>';
+    return desktop+mobile;
+  }
+  function bindMarketRowsV123(container,open,rerender){
+    container.querySelectorAll('.buy').forEach(b=>b.onclick=()=>openTransferNegotiation(b.dataset.id));
+    container.querySelectorAll('.scoutPlayerV123').forEach(b=>b.onclick=()=>startPlayerScoutV123(b.dataset.id));
+    container.querySelectorAll('.watch').forEach(b=>b.onclick=()=>{
+      S.shortlist=S.shortlist||[];
+      const exists=S.shortlist.map(String).includes(String(b.dataset.id));
+      S.shortlist=exists?S.shortlist.filter(id=>String(id)!==String(b.dataset.id)):[...S.shortlist,b.dataset.id];
+      save();
+      rerender();
+    });
+  }
+
+  searchMarket=function(open){
+    const q=$('#playerSearch').value.trim().toLowerCase();
+    if(q.length<2){toast('Escribe al menos 2 letras');return}
+    const res=S.players.filter(p=>p.club!==S.club&&p.club!=='Retirado'&&(
+      String(p.name||'').toLowerCase().includes(q)||String(p.club||'').toLowerCase().includes(q)||String(p.positions||'').toLowerCase().includes(q)
+    )).sort((a,b)=>fameScoreV123(b)-fameScoreV123(a)||(b.overall||0)-(a.overall||0)).slice(0,60);
+    const box=$('#searchResults');
+    box.innerHTML=res.length?searchResultsHTMLV123(res,open):'<div class="empty">No hay resultados.</div>';
+    bindMarketRowsV123(box,open,()=>searchMarket(open));
+  };
+
+  showSpecialMarketV7=function(kind){
+    const open=isWindowOpen(S.date);
+    let res=kind==='free'
+      ?S.players.filter(p=>p.club==='Agente libre'&&p.club!==S.club)
+      :S.players.filter(p=>p.club!==S.club&&p.club!=='Retirado'&&p.age<=21);
+    res=res.sort((a,b)=>fameScoreV123(b)-fameScoreV123(a)||(b.overall||0)-(a.overall||0)).slice(0,60);
+    const box=$('#searchResults');
+    box.innerHTML=res.length?searchResultsHTMLV123(res,open):'<div class="empty">No hay resultados.</div>';
+    bindMarketRowsV123(box,open,()=>showSpecialMarketV7(kind));
+  };
+
+  function activeScoutPanelV123(){
+    const st=scoutStateV123(),active=st.assignments.filter(a=>a.status==='active');
+    const complete=Object.values(st.reports).filter(r=>r.confidence>=100).length;
+    return '<div class="card scout-card-v123"><div class="row"><div><h3 style="margin:0">🔎 Scouting de jugadores</h3><div class="muted">Las estrellas son conocidas. Los futbolistas menos conocidos necesitan seguimiento progresivo.</div></div><span class="spacer"></span><span class="badge">'+active.length+'/'+scoutingSlotsV123()+' ojeadores ocupados</span></div>'+
+      '<div class="scout-overview-v123"><div class="scout-kpi-v123"><small>INFORMES COMPLETOS</small><strong>'+complete+'</strong></div><div class="scout-kpi-v123"><small>EN SEGUIMIENTO</small><strong>'+active.length+'</strong></div><div class="scout-kpi-v123"><small>NIVEL SCOUTING</small><strong>'+staffEffectV7('scouting')+'/5</strong></div><div class="scout-kpi-v123"><small>CAPACIDAD</small><strong>'+scoutingSlotsV123()+'</strong></div></div>'+
+      (active.length?'<div class="scout-active-v123">'+active.map(a=>{
+        const p=S.players.find(x=>String(x.id)===String(a.playerId)),r=p?reportV123(p):{confidence:0};
+        const elapsed=clamp(dateDiff(a.start,S.date),0,a.days||1),left=Math.max(0,(a.days||0)-elapsed);
+        return '<div class="scout-active-row-v123"><div><strong>'+esc(a.player)+'</strong><div class="muted">'+esc(p?.club||a.club||'')+' · '+Math.round(r.confidence||0)+'% desbloqueado</div><div class="scout-progress-v123"><i style="width:'+Math.round(r.confidence||0)+'%"></i></div></div><div class="muted">'+left+' días aprox. para completar</div><span class="scout-level-v123 '+confidenceLabelV123(r.confidence||0).cls+'">'+esc(confidenceLabelV123(r.confidence||0).label)+'</span></div>';
+      }).join('')+'</div>':'<div class="empty" style="margin-top:8px">No hay jugadores siendo ojeados ahora mismo.</div>')+
+    '</div>';
+  }
+
+  const renderTransfersV123Base=renderTransfersV7;
+  renderTransfersV7=function(){
+    renderTransfersV123Base();
+    ensureV7State();
+    const tabs=els.view.querySelector('.transfer-tabs');
+    if(tabs){
+      const holder=document.createElement('div');
+      holder.innerHTML=activeScoutPanelV123();
+      tabs.insertAdjacentElement('afterend',holder.firstElementChild);
+    }
+    const short=(S.shortlist||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+    const cards=[...els.view.querySelectorAll('.card')];
+    const watchCard=cards.find(c=>c.querySelector('h3')?.textContent?.includes('Seguimiento'));
+    if(watchCard){
+      watchCard.innerHTML='<h3>⭐ Seguimiento</h3>'+
+        (short.length?short.map(p=>{
+          const x=reportSummaryV123(p);
+          return '<div class="shortlist-row"><div><strong>'+esc(p.name)+'</strong><br><small class="muted">'+esc(p.club)+' · OVR '+(x.ovr==='—'?'?':esc(x.ovr))+' · '+(x.value==='—'?'valor desconocido':esc(x.value))+'</small><div class="scout-result-meta-v123"><span class="scout-level-v123 '+x.lab.cls+'">'+esc(x.lab.label)+' '+Math.round(x.r.confidence)+'%</span></div></div><div class="scout-actions-v123">'+scoutButtonHTMLV123(p)+'<button class="btn primary buy" data-id="'+esc(String(p.id))+'" '+(!isWindowOpen(S.date)?'disabled':'')+'>Negociar</button><button class="btn ghost unwatchV123" data-id="'+esc(String(p.id))+'">Quitar</button></div></div>';
+        }).join(''):'<div class="empty">Sin jugadores seguidos.</div>');
+      watchCard.querySelectorAll('.buy').forEach(b=>b.onclick=()=>openTransferNegotiation(b.dataset.id));
+      watchCard.querySelectorAll('.scoutPlayerV123').forEach(b=>b.onclick=()=>startPlayerScoutV123(b.dataset.id));
+      watchCard.querySelectorAll('.unwatchV123').forEach(b=>b.onclick=()=>{S.shortlist=S.shortlist.filter(id=>String(id)!==String(b.dataset.id));save();render('transfers')});
+    }
+  };
+
+  const openTransferV123Base=openTransferNegotiation;
+  openTransferNegotiation=function(id){
+    const p=S.players.find(x=>String(x.id)===String(id));
+    if(!p)return;
+    const x=reportSummaryV123(p);
+    openTransferV123Base(id);
+    if(!els.matchModal||els.matchModal.classList.contains('hidden'))return;
+    const close=els.matchBox.querySelector('#closeNeg');
+    const heading=els.matchBox.querySelector('h2');
+    const firstP=heading?.parentElement?.nextElementSibling;
+    const info=document.createElement('div');
+    info.className='scout-report-v123';
+    info.innerHTML='<div class="row"><div><strong>🔎 Informe de scouting</strong><div class="muted">'+esc(x.r.tier)+' · '+Math.round(x.r.confidence)+'% de información confirmada</div></div><span class="spacer"></span><span class="scout-level-v123 '+x.lab.cls+'">'+esc(x.lab.label)+'</span></div>'+
+      '<div class="scout-report-grid-v123">'+
+        '<div class="scout-report-cell-v123"><small>OVR</small><strong>'+(x.ovr==='—'?'Desconocido':esc(x.ovr))+'</strong></div>'+
+        '<div class="scout-report-cell-v123"><small>VALOR</small><strong>'+(x.value==='—'?'Desconocido':esc(x.value))+'</strong></div>'+
+        '<div class="scout-report-cell-v123"><small>SALARIO</small><strong>'+(x.wage==='—'?'Desconocido':esc(x.wage))+'</strong></div>'+
+        '<div class="scout-report-cell-v123"><small>POTENCIAL</small><strong>'+(x.potential==='—'?'Desconocido':esc(x.potential))+'</strong></div>'+
+        '<div class="scout-report-cell-v123"><small>CONTRATO</small><strong>'+(x.contract==='—'?'Desconocido':esc(x.contract))+'</strong></div>'+
+        '<div class="scout-report-cell-v123"><small>PERSONALIDAD</small><strong>'+(x.personality==='—'?'Desconocida':esc(x.personality))+'</strong></div>'+
+      '</div>'+
+      (x.r.confidence<100?'<div class="scout-warning-v123">⚠️ Puedes negociar ya, pero estás trabajando con información incompleta. Un informe mejor reduce el riesgo de sobrepagar o equivocarte con el nivel real.</div>':'');
+    if(firstP)firstP.replaceWith(info);else if(close)close.closest('.row')?.insertAdjacentElement('afterend',info);
+
+    const feeInput=els.matchBox.querySelector('#negFee'),wageInput=els.matchBox.querySelector('#negWage');
+    if(x.r.confidence<100){
+      if(feeInput){
+        const c=x.r.confidence,noise=((hashV7(playerKeyV123(p)+'|blind-fee')%41)-20)/100;
+        const est=Math.max(0,Math.round((p.value||0)*(1+noise*(1-c/115))));
+        feeInput.value=roundStepV123(Math.max(100000,est),est>=10000000?1000000:est>=1000000?250000:50000);
+      }
+      if(wageInput&&x.r.confidence<55){
+        const noise=((hashV7(playerKeyV123(p)+'|blind-wage')%51)-25)/100;
+        wageInput.value=roundStepV123(Math.max(500,(p.wage||1000)*(1+noise)),100);
+      }
+    }
+  };
+
+  const ensureV123Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV123Base();
+    if(!S)return;
+    scoutStateV123();
+  };
+
+  const worldDayV123Base=worldDayTickV7;
+  worldDayTickV7=function(date){
+    worldDayV123Base(date);
+    ensureV7State();
+    progressScoutingV123(date);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
