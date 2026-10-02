@@ -10786,6 +10786,154 @@ loadDB=async function(){
 })();
 
 
+
+// ===== REALISTIC 2D MATCH VIEW 10.30 =====
+// Vista tipo Football Manager: proporciones reales, marcadores discretos,
+// trayectoria visible del balón y bloques que basculan alrededor de la jugada.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.flow-card-v95{overflow:visible!important}'+
+    '.flow-pitch-v95{position:relative!important;aspect-ratio:105/68!important;height:auto!important;min-height:0!important;overflow:hidden!important;border:2px solid #eef8efcc!important;border-radius:5px!important;background:repeating-linear-gradient(90deg,#28743c 0 8.333%,#2d7d42 8.333% 16.666%)!important;box-shadow:0 0 0 5px #102219,0 12px 28px #0008,inset 0 0 45px #062b15aa!important}'+
+    '.flow-pitch-v95:before{border-left:1px solid #eff8efdd!important}.flow-pitch-v95:after{width:18.2%!important;height:28.1%!important;border:1px solid #eff8efdd!important;border-radius:50%!important}'+
+    '.flow-box-v95{top:21.2%!important;bottom:21.2%!important;width:15.7%!important;border:1px solid #eff8efdd!important}.pitch-six-v126{top:36.6%!important;bottom:36.6%!important;width:5.25%!important;border-color:#eff8efdd!important}'+
+    '.pitch-goal-v126{top:43%!important;bottom:43%!important;width:2.2%!important;border-color:#f8fff8!important;background:repeating-linear-gradient(45deg,#ffffff25 0 2px,transparent 2px 5px)!important;box-shadow:inset 0 0 7px #fff2!important}'+
+    '.pitch-spot-v126{width:4px!important;height:4px!important;background:#f7fff7e8!important}.pitch-arc-v127{border-color:#eff8efbb!important}.pitch-corner-v127{border-color:#eff8efbb!important}'+
+    '.pitch-shadow-v128{background:linear-gradient(180deg,#ffffff07,transparent 18%,transparent 82%,#00000010),repeating-linear-gradient(0deg,transparent 0 9.8%,#ffffff05 10% 10.2%,transparent 10.4% 20%)!important}'+
+    '.pitch-stand-v130{position:absolute;inset:0;pointer-events:none;z-index:0;box-shadow:inset 0 0 0 1px #ffffff0c,inset 0 16px 30px #00000013,inset 0 -16px 30px #00000013}'+
+    '.pitch-goalnet-v130{position:absolute;top:42%;height:16%;width:2.8%;z-index:1;border:1px solid #ffffffaa;background:repeating-linear-gradient(0deg,#ffffff22 0 1px,transparent 1px 4px),repeating-linear-gradient(90deg,#ffffff18 0 1px,transparent 1px 4px)}.pitch-goalnet-v130.left{left:0;transform:translateX(-34%)}.pitch-goalnet-v130.right{right:0;transform:translateX(34%)}'+
+    '.pitch-player-v129{transition:left .48s cubic-bezier(.2,.7,.3,1),top .48s cubic-bezier(.2,.7,.3,1)!important}'+
+    '.pitch-player-v129 .shirt{width:13px!important;height:13px!important;border-radius:50%!important;border:2px solid #f7fff7e6!important;font-size:0!important;box-shadow:0 2px 4px #000c,0 0 0 1px #0004!important;position:relative}'+
+    '.pitch-player-v129 .shirt:after{content:"";width:3px;height:3px;border-radius:50%;background:#ffffffd9;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}'+
+    '.pitch-player-v129.us .shirt{background:#1b86df!important}.pitch-player-v129.them .shirt{background:#df4848!important}.pitch-player-v129.gk .shirt{border-radius:3px!important;background:#e2a724!important}'+
+    '.pitch-player-v129.onball .shirt{outline:2px solid #fff28a!important;outline-offset:2px!important;box-shadow:0 0 13px #fff06eaa!important}.pitch-player-v129.wall .shirt{background:#a63f3f!important}.pitch-player-v129.target .shirt{outline:1px solid #ffffff88!important;outline-offset:2px!important}'+
+    '.pitch-player-v129 .nm{font-size:6.5px!important;line-height:1.1!important;max-width:58px!important;padding:1px 3px!important;margin-top:2px!important;background:#06100db3!important;opacity:.34;transition:opacity .2s ease!important}.pitch-player-v129.nearball .nm,.pitch-player-v129.onball .nm,.pitch-player-v129.target .nm{opacity:1!important}.pitch-player-v129.onball .nm{color:#fff2a2!important}'+
+    '.flow-ball-v95{width:11px!important;height:11px!important;background:radial-gradient(circle at 36% 30%,#fff 0 22%,#222 24% 34%,#f8f8f8 36% 64%,#222 66% 75%,#fff 77%)!important;border:1px solid #111!important;box-shadow:0 0 0 3px #fff27924,0 2px 8px #000c!important;animation:none!important;transition:left .45s cubic-bezier(.18,.72,.25,1),top .45s cubic-bezier(.18,.72,.25,1)!important}'+
+    '.flow-ball-v95.in-goal-v129{background:radial-gradient(circle at 36% 30%,#fff 0 22%,#222 24% 34%,#f8f8f8 36% 64%,#222 66% 75%,#fff 77%)!important;box-shadow:0 0 0 5px #fff16a2e,0 0 18px #fff16a!important}'+
+    '.ball-owner-v129{font-size:6.5px!important;background:#07110dd4!important;color:#fff2a2!important;transform:translate(-50%,-150%)!important}'+
+    '.ball-readout-v128{font-size:8px!important;background:#07110dda!important;border-color:#ffffff36!important;box-shadow:none!important;padding:3px 7px!important}'+
+    '.ball-trail-v128{display:none!important}.ball-path-v130{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;overflow:visible}.ball-path-v130 path{fill:none;stroke:#fff3a0aa;stroke-width:.55;stroke-dasharray:2 1.5;vector-effect:non-scaling-stroke}.ball-path-v130 circle{fill:#fff6b0aa}'+
+    '.pitch-direction-v130{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);z-index:2;font-size:6px;color:#ffffff75;letter-spacing:.12em;text-transform:uppercase;pointer-events:none}'+
+    '.flow-team-v95{font-size:7px!important;opacity:.72!important;background:#06100d99!important;padding:2px 4px!important;border-radius:4px!important}.pitch-bench-v128{opacity:.35}'+
+    '.play-state-v129{font-size:7px!important;background:#07110dcc!important;border-color:#ffffff30!important;padding:3px 6px!important}'+
+    '@media(min-width:951px){.match-live-grid-v128{grid-template-columns:minmax(520px,1.55fr) minmax(260px,.62fr)!important}.match-live-grid-v128 .flow-pitch-v95{min-height:0!important;max-height:none!important}}'+
+    '@media(max-width:950px){.flow-pitch-v95{aspect-ratio:105/68!important}.pitch-player-v129 .nm{font-size:6px!important;max-width:50px!important}}';
+  document.head.appendChild(style);
+
+  function baseCoordsV130(side,M){
+    const name=side==='us'?S.formation:(M.oppFormationV129||'4-2-3-1');
+    const form=FORMATIONS[name]||FORMATIONS['4-3-3'];
+    return form.map(sl=>side==='us'
+      ?{x:100-sl.y,y:sl.x,pos:sl.p}
+      :{x:sl.y,y:100-sl.x,pos:sl.p});
+  }
+  function roleWeightV130(pos){
+    if(pos==='GK')return 0;
+    if(/CB|LB|RB|LWB|RWB/.test(pos))return .72;
+    if(/CDM|CM|LM|RM/.test(pos))return 1;
+    if(/CAM|LW|RW/.test(pos))return 1.14;
+    return 1.26;
+  }
+  function realisticOpenShapeV130(M,side){
+    const st=M.livePlayV129||{x:M.ballXV95||50,y:M.ballYV95||50,side:M.ballOursV95?'us':'them',type:'open'};
+    const base=baseCoordsV130(side,M);
+    const attacking=st.side===side;
+    const ownGoal=side==='us'?0:100;
+    const dir=side==='us'?1:-1;
+    let coords=base.map(b=>{
+      if(b.pos==='GK')return{x:side==='us'?5.5:94.5,y:50,pos:b.pos};
+      const rw=roleWeightV130(b.pos);
+      const ballShift=(Number(st.x||50)-50)*(attacking?.13:.09)*rw;
+      const widthShift=(Number(st.y||50)-b.y)*(attacking?.09:.14);
+      let x=b.x+ballShift;
+      let y=b.y+widthShift;
+      if(attacking){
+        // Evita que todas las líneas se amontonen: defensa sostiene, medios acompañan y ataque estira.
+        if(rw<.8)x-=dir*2.5;
+        if(rw>1.1)x+=dir*2.4;
+      }else{
+        // Bloque defensivo más compacto entre balón y portería.
+        x+=(Number(st.x||50)-x)*.07;
+        y+=(50-y)*.05;
+      }
+      return{x:clamp(x,5,95),y:clamp(y,7,93),pos:b.pos};
+    });
+
+    const ball={x:Number(st.x||50),y:Number(st.y||50)};
+    const field=coords.map((c,i)=>({i,d:Math.hypot((c.x-ball.x)*1.05,(c.y-ball.y)*.68),pos:c.pos})).filter(x=>x.pos!=='GK').sort((a,b)=>a.d-b.d);
+    if(field[0]){
+      const c=coords[field[0].i],factor=attacking?.48:.42;
+      c.x+= (ball.x-c.x)*factor;c.y+=(ball.y-c.y)*factor;
+    }
+    if(field[1]){
+      const c=coords[field[1].i],factor=attacking?.22:.25;
+      c.x+=(ball.x-c.x)*factor;c.y+=(ball.y-c.y)*factor;
+    }
+
+    // Portero adelanta ligeramente su posición cuando su equipo domina lejos de su área.
+    const gi=coords.findIndex(c=>c.pos==='GK');
+    if(gi>=0&&attacking){
+      const progress=side==='us'?ball.x:100-ball.x;
+      coords[gi].x=side==='us'?clamp(5.5+progress*.055,5.5,12):clamp(94.5-progress*.055,88,94.5);
+    }
+    return coords;
+  }
+  function refinePlayersV130(M){
+    const st=M.livePlayV129||{};
+    if(st.type!=='open')return;
+    for(const side of ['us','them']){
+      const coords=realisticOpenShapeV130(M,side);
+      const elsSide=[...els.matchBox.querySelectorAll('.pitch-player-v129.'+side)];
+      elsSide.forEach((el,i)=>{
+        const c=coords[i];if(!c)return;
+        el.style.left=c.x+'%';el.style.top=c.y+'%';
+        const d=Math.hypot(c.x-Number(st.x||50),(c.y-Number(st.y||50))*.7);
+        el.classList.toggle('nearball',d<22);
+      });
+    }
+  }
+  function addPitchDetailsV130(M){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');if(!pitch)return;
+    pitch.querySelectorAll('.pitch-stand-v130,.pitch-goalnet-v130,.pitch-direction-v130,.ball-path-v130').forEach(x=>x.remove());
+    pitch.insertAdjacentHTML('afterbegin',
+      '<span class="pitch-stand-v130"></span>'+
+      '<span class="pitch-goalnet-v130 left"></span><span class="pitch-goalnet-v130 right"></span>'+
+      '<span class="pitch-direction-v130">'+esc(S.club)+' → &nbsp;&nbsp;&nbsp; ← '+esc(M.opp)+'</span>'
+    );
+    const u=M.uiV128||{},trail=Array.isArray(u.trail)?u.trail:[],st=M.livePlayV129||{};
+    const prev=trail[0];
+    const cx=Number(st.x ?? M.ballXV95 ?? 50),cy=Number(st.y ?? M.ballYV95 ?? 50);
+    if(prev&&Number.isFinite(prev.x)&&Number.isFinite(prev.y)){
+      const mx=(prev.x+cx)/2,my=(prev.y+cy)/2-4;
+      pitch.insertAdjacentHTML('beforeend',
+        '<svg class="ball-path-v130" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">'+
+          '<path d="M '+prev.x+' '+prev.y+' Q '+mx+' '+my+' '+cx+' '+cy+'"></path>'+
+          '<circle cx="'+prev.x+'" cy="'+prev.y+'" r=".65"></circle>'+
+        '</svg>'
+      );
+    }
+  }
+  function polishLabelsV130(M){
+    const st=M.livePlayV129||{};
+    const bx=Number(st.x||50),by=Number(st.y||50);
+    els.matchBox.querySelectorAll('.pitch-player-v129').forEach(el=>{
+      const x=parseFloat(el.style.left)||50,y=parseFloat(el.style.top)||50;
+      const near=Math.hypot(x-bx,(y-by)*.7)<20;
+      el.classList.toggle('nearball',near||el.classList.contains('onball'));
+    });
+  }
+
+  const renderBaseV130=renderMatch;
+  renderMatch=function(M){
+    renderBaseV130(M);
+    if(!M)return;
+    refinePlayersV130(M);
+    addPitchDetailsV130(M);
+    polishLabelsV130(M);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
