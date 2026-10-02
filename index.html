@@ -12330,6 +12330,165 @@ loadDB=async function(){
 })();
 
 
+
+// ===== RICH LIVE COMMENTARY 10.39 =====
+// Relato más descriptivo y conectado con la posición del balón. Las ocasiones
+// importantes reciben una pequeña secuencia previa para entender cómo se generan.
+(function(){
+  const prepareBaseV139=window.prepareMinuteV95;
+  const simulateBaseV139=simulateChance;
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.commentary .event{line-height:1.5!important;padding:9px 10px!important}'+
+    '.commentary .event.flow-v139{color:#c7d7cd!important;background:#0a1711!important;border-left:2px solid #365846!important}'+
+    '.commentary .event.build-v139{color:#d6e5db!important;background:#0c1a13!important;border-left:2px solid #4b7159!important}'+
+    '.commentary .event.chance-v139{color:#ffe3a5!important;background:#251d0c!important;border-left:3px solid #c39b44!important;font-weight:800}'+
+    '.commentary .event.danger-v139{color:#ffc0b7!important;background:#2b1212!important;border-left:3px solid #b65353!important;font-weight:800}'+
+    '.commentary .event.goal-context-v139{color:#bdf2cb!important;background:#12331f!important;border-left:3px solid #56b873!important;font-weight:850}';
+  document.head.appendChild(style);
+
+  function shortV139(name){
+    const parts=String(name||'').trim().split(/\s+/);
+    return parts.length>1?parts[parts.length-1]:parts[0]||'un jugador';
+  }
+  function teamPlayersV139(side,M){
+    if(side==='us'){
+      return (S.lineup||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+    }
+    return (S.players||[]).filter(p=>p.club===M.opp&&!p.parentClub&&p.club!=='Retirado').slice().sort((a,b)=>(b.overall||0)-(a.overall||0)).slice(0,18);
+  }
+  function rolePoolV139(side,M,type){
+    const ps=teamPlayersV139(side,M);
+    const test=type==='def'
+      ?p=>/GK|CB|LB|RB|LWB|RWB|CDM/.test(String(p.positions||''))
+      :type==='mid'
+      ?p=>/CDM|CM|CAM|LM|RM/.test(String(p.positions||''))
+      :p=>/ST|CF|LW|RW|LM|RM|CAM/.test(String(p.positions||''));
+    const arr=ps.filter(test);
+    return arr.length?arr:ps;
+  }
+  function pickNameV139(side,M,type,exclude=''){
+    const pool=rolePoolV139(side,M,type).filter(p=>p.name!==exclude);
+    const p=pool.length?pick(pool):null;
+    return p?.name|| (side==='us'?S.club:M.opp);
+  }
+  function flankV139(y){
+    if(y<35)return'por la banda izquierda';
+    if(y>65)return'por la banda derecha';
+    return'por dentro';
+  }
+  function zoneV139(side,x){
+    if(side==='us'){
+      if(x<25)return'desde campo propio';
+      if(x<48)return'en la salida';
+      if(x<70)return'en campo rival';
+      if(x<87)return'en el último tercio';
+      return'dentro del área rival';
+    }
+    if(x>75)return'desde campo propio';
+    if(x>52)return'en la salida';
+    if(x>30)return'en campo rival';
+    if(x>13)return'en el último tercio';
+    return'dentro del área de '+S.club;
+  }
+  function detailedFlowV139(M,side){
+    const st=M.livePlayV129||{},x=Number(st.x??M.ballXV95??50),y=Number(st.y??M.ballYV95??50);
+    const club=side==='us'?S.club:M.opp;
+    const opp=side==='us'?M.opp:S.club;
+    const p1=pickNameV139(side,M,x<35||x>65?'def':'mid');
+    const p2=pickNameV139(side,M,x<35||x>65?'mid':'att',p1);
+    const wing=flankV139(y),zone=zoneV139(side,x);
+    const templates=[
+      p1+' recibe '+zone+', levanta la cabeza y encuentra a '+shortV139(p2)+' '+wing+'. '+club+' mantiene la posesión y obliga a '+opp+' a replegar.',
+      club+' mueve el balón con paciencia '+zone+'. '+shortV139(p1)+' atrae la presión y descarga sobre '+shortV139(p2)+', que intenta acelerar '+wing+'.',
+      shortV139(p1)+' protege la pelota ante la presión. '+club+' junta varios pases y consigue progresar '+wing+' sin perder la estructura.',
+      club+' recupera una segunda jugada. '+shortV139(p1)+' asegura el primer pase y '+shortV139(p2)+' aparece libre '+zone+' para dar continuidad al ataque.'
+    ];
+    return pick(templates);
+  }
+  function transitionTextV139(M,side){
+    const club=side==='us'?S.club:M.opp,opp=side==='us'?M.opp:S.club;
+    const p1=pickNameV139(side,M,'mid'),p2=pickNameV139(side,M,'att',p1);
+    return pick([
+      'Pérdida de '+opp+' y '+club+' intenta correr. '+shortV139(p1)+' conduce con metros por delante y busca rápido a '+shortV139(p2)+'.',
+      club+' recupera y activa la transición. '+shortV139(p1)+' juega vertical antes de que '+opp+' pueda ordenar su defensa.',
+      'Cambio de posesión. '+shortV139(p1)+' gana el balón dividido y '+club+' sale con velocidad buscando a '+shortV139(p2)+' entre los defensas.'
+    ]);
+  }
+  function chanceSequenceV139(M,side,goal){
+    const club=side==='us'?S.club:M.opp,opp=side==='us'?M.opp:S.club;
+    const a=pickNameV139(side,M,'att'),b=pickNameV139(side,M,'mid',a),c=pickNameV139(side,M,'att',a);
+    const st=M.livePlayV129||{},wing=flankV139(Number(st.y??50));
+    if(goal){
+      return[
+        {text:M.minute+"' "+shortV139(b)+' encuentra espacio entre líneas y gira antes de que llegue la presión de '+opp+'.',cls:'build-v139',side},
+        {text:M.minute+"' "+shortV139(a)+' ataca el espacio '+wing+'. '+shortV139(b)+' filtra el pase y '+club+' rompe la última línea.',cls:'chance-v139',side},
+        {text:M.minute+"' "+shortV139(a)+' entra en zona de remate. La defensa intenta cerrar, pero la jugada ya está dentro del área.',cls:side==='us'?'goal-context-v139':'danger-v139',side}
+      ];
+    }
+    return[
+      {text:M.minute+"' "+club+' acelera cerca del área. '+shortV139(b)+' combina con '+shortV139(a)+' y la defensa de '+opp+' empieza a retroceder.',cls:side==='us'?'chance-v139':'danger-v139',side},
+      {text:M.minute+"' "+shortV139(a)+' encuentra espacio para finalizar '+wing+'. '+shortV139(c)+' acompaña la jugada buscando el rechace.',cls:side==='us'?'chance-v139':'danger-v139',side}
+    ];
+  }
+  function enrichNormalEventV139(M,startIndex){
+    const added=(M.events||[]).slice(startIndex);
+    for(let i=0;i<added.length;i++){
+      const e=added[i];
+      if(!e||e.cls==='goal'||e.cls==='carde'||/Descanso|segunda parte|Decisión|Córner|Saque de puerta|Saque de banda/i.test(String(e.text||'')))continue;
+      const idx=startIndex+i;
+      const side=e.side||(M.ballOursV95?'us':'them');
+      // Sustituimos comentarios muy genéricos por una acción más legible.
+      if(String(e.text||'').length<115){
+        M.events[idx]={...e,text:M.minute+"' "+detailedFlowV139(M,side),cls:'flow-v139',side};
+      }
+    }
+  }
+
+  window.prepareMinuteV95=function(M){
+    const before=(M.events||[]).length;
+    const prevSide=M.ballOursV95?'us':'them';
+    if(typeof prepareBaseV139==='function')prepareBaseV139(M);
+    const nowSide=M.ballOursV95?'us':'them';
+    if(prevSide!==nowSide&&M.minute>1&&Math.random()<.72){
+      M.events.push({text:M.minute+"' "+transitionTextV139(M,nowSide),cls:'build-v139',side:nowSide});
+    }
+    enrichNormalEventV139(M,before);
+    if(M.events.length>150)M.events=M.events.slice(-150);
+  };
+
+  simulateChance=function(M){
+    const beforeLen=(M.events||[]).length;
+    const before={hg:M.hg,ag:M.ag,myShots:M.myShots||0,oppShots:M.oppShots||0};
+    simulateBaseV139(M);
+
+    const myGoal=(M.home?M.hg:M.ag)>(M.home?before.hg:before.ag);
+    const oppGoal=(M.home?M.ag:M.hg)>(M.home?before.ag:before.hg);
+    const myShot=(M.myShots||0)>before.myShots;
+    const oppShot=(M.oppShots||0)>before.oppShots;
+    const side=myGoal||myShot?'us':oppGoal||oppShot?'them':null;
+    if(!side)return;
+
+    const seq=chanceSequenceV139(M,side,myGoal||oppGoal);
+    // Insertamos la construcción justo antes del resultado original de la ocasión.
+    M.events.splice(beforeLen,0,...seq);
+
+    const newTail=M.events.slice(beforeLen+seq.length);
+    if(!(myGoal||oppGoal)){
+      const result=newTail.find(e=>/ocasión|remate|parada|sin premio|sin gol/i.test(String(e?.text||'')));
+      if(result&&String(result.text||'').length<95){
+        const keeper=pickNameV139(side==='us'?'them':'us',M,'def');
+        result.text=M.minute+"' El remate no encuentra premio. "+shortV139(keeper)+' y la defensa consiguen apagar el peligro.';
+        result.cls=side==='us'?'chance-v139':'danger-v139';
+        result.side=side;
+      }
+    }
+    if(M.events.length>150)M.events=M.events.slice(-150);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
