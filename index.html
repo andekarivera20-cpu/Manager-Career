@@ -11206,6 +11206,105 @@ loadDB=async function(){
 })();
 
 
+
+// ===== SMOOTH 2D MATCH MOTION 10.33 =====
+// El render del partido sustituye nodos cada tick, por eso las transiciones CSS
+// no interpolaban entre jugadas. Guardamos las coordenadas visibles anteriores y
+// animamos los nuevos nodos desde ellas. 2D vuelve a ser la vista predeterminada.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.flow-card-v95:not(.view3d-v132) .pitch-player-v129{transition:none!important}'+
+    '.flow-card-v95:not(.view3d-v132) .flow-ball-v95{transition:none!important}'+
+    '.smooth-status-v133{font-size:8px;color:#8fa397;text-align:center;margin-top:3px;opacity:.8}';
+  document.head.appendChild(style);
+
+  function posV133(el){
+    if(!el)return null;
+    const x=parseFloat(el.style.left),y=parseFloat(el.style.top);
+    return Number.isFinite(x)&&Number.isFinite(y)?{x,y}:null;
+  }
+  function snapshotV133(){
+    const pitch=els.matchBox?.querySelector('.flow-pitch-v95');
+    if(!pitch)return null;
+    return{
+      us:[...pitch.querySelectorAll('.pitch-player-v129.us')].map(posV133),
+      them:[...pitch.querySelectorAll('.pitch-player-v129.them')].map(posV133),
+      ball:posV133(pitch.querySelector('.flow-ball-v95'))
+    };
+  }
+  function durationV133(M){
+    const speed=Number(M?.uiV128?.speed||1);
+    if(speed<=.5)return 1050;
+    if(speed<=1)return 540;
+    if(speed<=2)return 255;
+    return 115;
+  }
+  function animateNodeV133(el,from,to,duration,easing='cubic-bezier(.2,.72,.28,1)'){
+    if(!el||!from||!to||typeof el.animate!=='function')return;
+    const dx=Math.abs(to.x-from.x),dy=Math.abs(to.y-from.y);
+    if(dx<.08&&dy<.08)return;
+    try{
+      el.animate(
+        [{left:from.x+'%',top:from.y+'%'},{left:to.x+'%',top:to.y+'%'}],
+        {duration,easing,fill:'none'}
+      );
+    }catch(e){}
+  }
+  function animateFieldV133(M,prev){
+    if(!prev)return;
+    const card=els.matchBox.querySelector('.flow-card-v95');
+    const pitch=card?.querySelector('.flow-pitch-v95');
+    if(!pitch||card.classList.contains('view3d-v132'))return;
+    const dur=durationV133(M);
+
+    const nowUs=[...pitch.querySelectorAll('.pitch-player-v129.us')];
+    const nowThem=[...pitch.querySelectorAll('.pitch-player-v129.them')];
+
+    nowUs.forEach((el,i)=>animateNodeV133(el,prev.us?.[i],posV133(el),dur));
+    nowThem.forEach((el,i)=>animateNodeV133(el,prev.them?.[i],posV133(el),dur));
+
+    const ball=pitch.querySelector('.flow-ball-v95');
+    const target=posV133(ball);
+    if(ball&&prev.ball&&target){
+      const dist=Math.hypot(target.x-prev.ball.x,(target.y-prev.ball.y)*.7);
+      const easing=dist>28?'cubic-bezier(.12,.66,.22,1)':'cubic-bezier(.22,.7,.28,1)';
+      animateNodeV133(ball,prev.ball,target,Math.min(dur+80,dur*1.08),easing);
+    }
+  }
+  function force2DDefaultV133(M){
+    if(!S.matchSmoothV133Migrated){
+      S.matchViewV132='2d';
+      S.matchSmoothV133Migrated=true;
+      save();
+    }
+    if(!S.matchViewV132)S.matchViewV132='2d';
+    if(M){
+      M.uiV132=M.uiV132||{};
+      M.uiV132.view=S.matchViewV132||'2d';
+    }
+  }
+  function addSmoothStatusV133(){
+    const score=els.matchBox.querySelector('.scoreboard');
+    if(!score||score.querySelector('.smooth-status-v133'))return;
+    const toggle=score.querySelector('.view-toggle-v132');
+    if(toggle)toggle.insertAdjacentHTML('afterend','<div class="smooth-status-v133">Movimiento suavizado entre jugadas</div>');
+  }
+
+  const renderBaseV133=renderMatch;
+  renderMatch=function(M){
+    const prev=snapshotV133();
+    force2DDefaultV133(M);
+    renderBaseV133(M);
+    if(!M)return;
+    requestAnimationFrame(()=>{
+      animateFieldV133(M,prev);
+      addSmoothStatusV133();
+    });
+  };
+})();
+
+
 loadDB();
 })();
 </script>
