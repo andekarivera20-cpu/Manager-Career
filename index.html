@@ -9874,6 +9874,189 @@ loadDB=async function(){
 })();
 
 
+
+// ===== MATCH EXPERIENCE 2.0 10.26 =====
+// PC scroll estable, marcador compacto/sticky, campo renovado y momentos clave visibles.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.match-modal-v126{overscroll-behavior:contain;scroll-behavior:auto!important}'+
+    '.match-top-v126{position:sticky;top:-1px;z-index:30;margin:0 0 8px;padding:7px 10px;border:1px solid #294235;border-radius:11px;background:#07110df4;box-shadow:0 6px 18px #0008;backdrop-filter:blur(10px)}'+
+    '.match-scoreline-v126{display:grid;grid-template-columns:minmax(130px,1fr) auto minmax(130px,1fr);align-items:center;gap:10px}'+
+    '.match-side-v126{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;font-weight:900}.match-side-v126.away{justify-content:flex-end;text-align:right}.match-side-v126 span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
+    '.match-side-v126 .crest,.match-side-v126 .crest-fallback{width:27px;height:27px;min-width:27px;font-size:7px}'+
+    '.match-score-v126{display:flex;align-items:center;gap:8px;font-size:26px;font-weight:950;letter-spacing:-.04em;white-space:nowrap}.match-minute-v126{font-size:10px;color:var(--accent2);padding:3px 6px;border:1px solid var(--line);border-radius:999px;letter-spacing:0}'+
+    '.match-mini-stats-v126{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:3px;color:var(--muted);font-size:9px}.match-mini-stats-v126 b{color:var(--text)}'+
+    '.goal-flash-v126{margin-top:6px;padding:6px 9px;border-radius:8px;background:#163b24;border:1px solid #3b7950;font-size:11px;font-weight:950;text-align:center;animation:goalPulseV126 .65s ease-in-out 2}.goal-flash-v126.them{background:#3b1717;border-color:#7a3d3d}'+
+    '@keyframes goalPulseV126{50%{transform:scale(1.012);filter:brightness(1.25)}}'+
+    '.scoreboard .match-teams,.scoreboard .live-stats,.scoreboard .momentum{display:none!important}.scoreboard{padding:6px 8px!important;border-radius:10px!important;background:#09140fcc!important}.scoreboard .match-actions{margin:0!important;gap:6px!important}.scoreboard .match-actions .btn,.scoreboard .match-actions select{min-height:34px!important;padding:6px 8px!important;font-size:10px!important}'+
+    '.flow-card-v95{padding:9px!important;margin-top:8px!important;border-radius:12px!important;background:linear-gradient(180deg,#0b1811,#07110d)!important}.flow-head-v95{margin-bottom:6px!important;font-size:10px!important}.auto-note-v95{font-size:9px!important;margin-top:5px!important}'+
+    '.flow-pitch-v95{height:238px!important;border:2px solid #dcefe0aa!important;border-radius:12px!important;background:repeating-linear-gradient(90deg,#145029 0 10%,#195b30 10% 20%)!important;box-shadow:inset 0 0 35px #001e0d99,0 7px 18px #0005}'+
+    '.flow-pitch-v95:before{border-left-color:#e5f2e6aa!important}.flow-pitch-v95:after{width:72px!important;height:72px!important;border-color:#e5f2e6aa!important}'+
+    '.flow-box-v95{top:20%!important;bottom:20%!important;width:17%!important;border-color:#e5f2e6aa!important}'+
+    '.pitch-six-v126{position:absolute;top:34%;bottom:34%;width:7.5%;border:1px solid #e5f2e699;z-index:1}.pitch-six-v126.left{left:0;border-left:0}.pitch-six-v126.right{right:0;border-right:0}'+
+    '.pitch-goal-v126{position:absolute;top:42%;bottom:42%;width:2.4%;border:2px solid #f4fff4cc;background:repeating-linear-gradient(45deg,#ffffff22 0 2px,#ffffff00 2px 5px);z-index:1}.pitch-goal-v126.left{left:0;transform:translateX(-1px)}.pitch-goal-v126.right{right:0;transform:translateX(1px)}'+
+    '.pitch-spot-v126{position:absolute;width:5px;height:5px;border-radius:50%;background:#e8f5e8aa;top:50%;transform:translate(-50%,-50%);z-index:1}.pitch-spot-v126.left{left:11%}.pitch-spot-v126.right{left:89%}.pitch-center-v126{left:50%;width:6px;height:6px;background:#f3fff3cc}'+
+    '.pitch-player-v126{position:absolute;width:12px;height:12px;border-radius:50%;transform:translate(-50%,-50%);z-index:2;border:2px solid #fff9;box-shadow:0 2px 5px #0009;transition:left .45s linear,top .45s linear}.pitch-player-v126.us{background:#45a5ff}.pitch-player-v126.them{background:#f05c5c}.pitch-player-v126.gk{width:13px;height:13px;border-radius:3px}'+
+    '.flow-ball-v95{width:13px!important;height:13px!important;border:2px solid #101010!important;z-index:8!important;box-shadow:0 2px 8px #000d!important}.flow-team-v95{bottom:6px!important;font-size:9px!important;z-index:5}'+
+    '.pitch-collapse-v126{margin-left:auto;border:1px solid var(--line);background:#102219;color:var(--text);border-radius:7px;padding:4px 7px;font-size:9px;font-weight:850;cursor:pointer}.flow-card-v95.collapsed-v126 .flow-pitch-v95{height:72px!important}.flow-card-v95.collapsed-v126 .auto-note-v95{display:none}.flow-card-v95.collapsed-v126 .pitch-player-v126{display:none}'+
+    '.key-events-v126{margin:9px 0 0;padding:9px;border:1px solid var(--line);border-radius:11px;background:#08130e}.key-events-v126 h3{font-size:12px;margin:0 0 5px}.key-event-v126{display:grid;grid-template-columns:34px 1fr;gap:7px;align-items:start;padding:6px 0;border-bottom:1px solid #192a20;font-size:10px}.key-event-v126:last-child{border-bottom:0}.key-minute-v126{font-weight:950;color:var(--accent2)}.key-event-v126.goal{font-size:11px;font-weight:900;color:#a9f0bd}.key-event-v126.them.goal{color:#ffb0b0}'+
+    '.match-shell{align-items:start}.match-shell>div{min-width:0}.commentary{height:220px!important}.event.goal{font-size:13px!important;padding:9px!important;background:#12341f!important;border-left:3px solid #63cf83!important;color:#b8f3c8!important}.event.goal.team-them-v97{background:#351515!important;border-left-color:#df6969!important;color:#ffc0c0!important}.event.carde{background:#211d0e!important}'+
+    '@media(min-width:951px){.match-modal-v126{max-height:92vh!important}.match-shell{grid-template-columns:minmax(0,1fr) 270px!important}.key-events-v126{max-height:190px;overflow:auto}}'+
+    '@media(max-width:950px){.flow-pitch-v95{height:180px!important}.match-top-v126{top:0}.match-scoreline-v126{grid-template-columns:1fr auto 1fr}.match-side-v126{font-size:10px}.match-side-v126 .crest,.match-side-v126 .crest-fallback{width:23px;height:23px;min-width:23px}.match-score-v126{font-size:22px}.commentary{height:175px!important}}'+
+    '@media(max-width:560px){.flow-pitch-v95{height:155px!important}.match-mini-stats-v126{gap:7px;font-size:8px}.match-top-v126{padding:6px}.match-side-v126 span{max-width:92px}.match-score-v126{font-size:19px}.flow-head-v95 strong{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}';
+  document.head.appendChild(style);
+
+  function uiV126(M){
+    M.uiV126=M.uiV126||{lastH:Number(M.hg||0),lastA:Number(M.ag||0),pitchCollapsed:false,goalUntil:0,goalText:'',goalSide:''};
+    return M.uiV126;
+  }
+  function scoreDataV126(M){
+    return{
+      home:M.fixture.home,away:M.fixture.away,
+      h:Number(M.hg||0),a:Number(M.ag||0),
+      myShots:Number(M.myShots||0),oppShots:Number(M.oppShots||0),
+      poss:Math.round(clamp(M.momentum||50,25,75))
+    };
+  }
+  function detectGoalV126(M){
+    const u=uiV126(M),x=scoreDataV126(M);
+    if(x.h===u.lastH&&x.a===u.lastA)return false;
+    const scoring=x.h>u.lastH?x.home:x.away;
+    const side=scoring===S.club?'us':'them';
+    const ev=[...(M.events||[])].reverse().find(e=>e&&e.cls==='goal');
+    u.goalSide=side;
+    u.goalText=(side==='us'?'⚽ ¡GOOOL! ':'⚽ Gol de '+esc(scoring)+' · ')+(ev?.text?String(ev.text).replace(/^⚽\s*/,''):(x.h+' - '+x.a));
+    u.goalUntil=Date.now()+7000;
+    u.lastH=x.h;u.lastA=x.a;
+    return true;
+  }
+  function topHTMLV126(M){
+    const x=scoreDataV126(M),u=uiV126(M);
+    const homeShots=M.home?x.myShots:x.oppShots,awayShots=M.home?x.oppShots:x.myShots;
+    const homePoss=M.home?x.poss:100-x.poss,awayPoss=100-homePoss;
+    const flash=Date.now()<u.goalUntil
+      ?'<div class="goal-flash-v126 '+(u.goalSide==='them'?'them':'')+'">'+esc(u.goalText)+' · '+x.h+'–'+x.a+'</div>'
+      :'';
+    return '<div class="match-top-v126">'+
+      '<div class="match-scoreline-v126">'+
+        '<div class="match-side-v126">'+crestMarkup(x.home,DB.clubs.get(x.home)?.leagueId||S.leagueId,'sm')+'<span>'+esc(x.home)+'</span></div>'+
+        '<div class="match-score-v126"><span>'+x.h+'</span><span>–</span><span>'+x.a+'</span><span class="match-minute-v126">'+Math.min(90,M.minute||0)+"'</span></div>"+
+        '<div class="match-side-v126 away"><span>'+esc(x.away)+'</span>'+crestMarkup(x.away,DB.clubs.get(x.away)?.leagueId||S.leagueId,'sm')+'</div>'+
+      '</div>'+
+      '<div class="match-mini-stats-v126"><span>Tiros <b>'+homeShots+'–'+awayShots+'</b></span><span>Posesión <b>'+homePoss+'–'+awayPoss+'%</b></span><span>Momentum <b>'+Math.round(x.poss)+'%</b></span></div>'+
+      flash+
+    '</div>';
+  }
+  function pitchPlayersHTMLV126(M){
+    const bx=Number(M.ballXV95||50),shift=(bx-50)*.10;
+    const ys=[15,34,52,72,88];
+    const us=[
+      [7,50,'gk'],[20,18,''],[20,40,''],[20,62,''],[20,82,''],
+      [39,25,''],[39,50,''],[39,75,''],[58,20,''],[58,80,''],[67,50,'']
+    ];
+    const them=[
+      [93,50,'gk'],[80,18,''],[80,40,''],[80,62,''],[80,82,''],
+      [61,25,''],[61,50,''],[61,75,''],[42,20,''],[42,80,''],[33,50,'']
+    ];
+    const own=(S.lineup||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+    return us.map((p,i)=>{
+      const left=clamp(p[0]+shift,5,78),name=own[i]?.name||S.club;
+      return '<span class="pitch-player-v126 us '+p[2]+'" title="'+esc(name)+'" style="left:'+left+'%;top:'+p[1]+'%"></span>';
+    }).join('')+
+    them.map((p,i)=>{
+      const left=clamp(p[0]+shift*.45,22,95);
+      return '<span class="pitch-player-v126 them '+p[2]+'" title="'+esc(M.opp)+'" style="left:'+left+'%;top:'+p[1]+'%"></span>';
+    }).join('');
+  }
+  function upgradePitchV126(M){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');
+    if(!pitch||pitch.dataset.v126)return;
+    pitch.dataset.v126='1';
+    pitch.insertAdjacentHTML('afterbegin',
+      '<div class="pitch-six-v126 left"></div><div class="pitch-six-v126 right"></div>'+
+      '<div class="pitch-goal-v126 left"></div><div class="pitch-goal-v126 right"></div>'+
+      '<span class="pitch-spot-v126 left"></span><span class="pitch-spot-v126 right"></span><span class="pitch-spot-v126 pitch-center-v126"></span>'+
+      pitchPlayersHTMLV126(M)
+    );
+    const card=pitch.closest('.flow-card-v95');
+    if(card){
+      card.classList.toggle('collapsed-v126',!!uiV126(M).pitchCollapsed);
+      const head=card.querySelector('.flow-head-v95');
+      if(head&&!head.querySelector('.pitch-collapse-v126')){
+        const b=document.createElement('button');
+        b.className='pitch-collapse-v126';
+        b.textContent=uiV126(M).pitchCollapsed?'Ampliar campo':'Minimizar campo';
+        b.onclick=()=>{
+          const u=uiV126(M);u.pitchCollapsed=!u.pitchCollapsed;
+          card.classList.toggle('collapsed-v126',u.pitchCollapsed);
+          b.textContent=u.pitchCollapsed?'Ampliar campo':'Minimizar campo';
+        };
+        head.appendChild(b);
+      }
+    }
+  }
+  function eventMinuteV126(text){
+    const m=String(text||'').match(/(\d{1,3})'/);
+    return m?m[1]+"'":'•';
+  }
+  function keyEventsHTMLV126(M){
+    const rows=(M.events||[]).filter(e=>{
+      const t=String(e?.text||'');
+      return e?.cls==='goal'||e?.cls==='carde'||/Descanso|Comienza la segunda|penaltis|prórroga/i.test(t);
+    }).slice(-7).reverse();
+    return '<div class="key-events-v126"><h3>⭐ Momentos clave</h3>'+
+      (rows.length?rows.map(e=>{
+        const goal=e.cls==='goal',side=e.side||(String(e.text).includes(M.opp)?'them':'');
+        return '<div class="key-event-v126 '+(goal?'goal ':'')+(side==='them'?'them':'')+'"><span class="key-minute-v126">'+esc(eventMinuteV126(e.text))+'</span><span>'+esc(e.text)+'</span></div>';
+      }).join(''):'<div class="muted" style="font-size:10px">Todavía no hay ocasiones decisivas.</div>')+
+    '</div>';
+  }
+  function installTopV126(M){
+    if(els.matchBox.querySelector('.match-top-v126'))return;
+    const first=els.matchBox.firstElementChild;
+    if(first)first.insertAdjacentHTML('afterend',topHTMLV126(M));
+    else els.matchBox.insertAdjacentHTML('afterbegin',topHTMLV126(M));
+    hydrateCrests(els.matchBox);
+  }
+  function installKeyEventsV126(M){
+    if(els.matchBox.querySelector('.key-events-v126'))return;
+    const flow=els.matchBox.querySelector('.flow-card-v95');
+    if(flow)flow.insertAdjacentHTML('afterend',keyEventsHTMLV126(M));
+    else{
+      const commentary=els.matchBox.querySelector('.commentary');
+      if(commentary)commentary.insertAdjacentHTML('beforebegin',keyEventsHTMLV126(M));
+    }
+  }
+
+  const openMatchV126Base=openMatch;
+  openMatch=function(f){
+    openMatchV126Base(f);
+    els.matchBox.classList.add('match-modal-v126');
+  };
+
+  const renderMatchV126Base=renderMatch;
+  renderMatch=function(M){
+    const scrollTop=els.matchBox?.scrollTop||0;
+    const userWasDown=scrollTop>24;
+    detectGoalV126(M);
+    renderMatchV126Base(M);
+    if(!M)return;
+    els.matchBox.classList.add('match-modal-v126');
+    installTopV126(M);
+    upgradePitchV126(M);
+    installKeyEventsV126(M);
+
+    // El render automático del partido no debe devolver al usuario al campo.
+    if(userWasDown){
+      requestAnimationFrame(()=>{
+        if(els.matchBox)els.matchBox.scrollTop=scrollTop;
+      });
+    }
+  };
+})();
+
+
 loadDB();
 })();
 </script>
