@@ -9682,7 +9682,8 @@ loadDB=async function(){
       f.spent=(f.spent||0)+winner.fee;
     }
     const sf=S.clubAIV118?.clubs?.[old];
-    if(sf){sf.budget=(sf.budget||0)+winner.fee;sf.sales=(sf.sales||0)+winner.fee}
+    if(sf){sf.budget=(sf.budget||0)+winner.fee;sf.sales=(sf.sales||0)+winner.fee;sf.lastPlan=null;sf.needs=[]}
+    if(f){f.lastPlan=null;f.needs=[]}
     p.club=winner.club;
     p.leagueId=DB.clubs.get(winner.club)?.leagueId||p.leagueId;
     p.leagueName=EURO_LEAGUES[p.leagueId]?.name||p.leagueName;
@@ -9810,6 +9811,7 @@ loadDB=async function(){
     r.status='user-won';r.winner=S.club;r.completed=S.date;
     raceStateV125().history.unshift({date:S.date,player:p.name,to:S.club,clubs:r.offers.map(o=>o.club),type:'user'});
     addNews('Ganaste la carrera',S.club+' se adelanta a '+r.offers.map(o=>o.club).join(', ')+' y cierra el fichaje de '+p.name+'.','mercado');
+    save();
   }
 
   const ensureV125Base=ensureV7State;
