@@ -10934,6 +10934,142 @@ loadDB=async function(){
 })();
 
 
+
+// ===== DYNAMIC 2D MATCH MOTION 10.31 =====
+// Lectura más futbolística del 2D: presión, apoyos, líneas de pase,
+// línea defensiva y transiciones más suaves sin alterar el resultado del motor.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.pitch-player-v129{will-change:left,top;transition:left .56s cubic-bezier(.16,.72,.28,1),top .56s cubic-bezier(.16,.72,.28,1)!important}'+
+    '.flow-ball-v95{will-change:left,top;transition:left .54s cubic-bezier(.12,.76,.24,1),top .54s cubic-bezier(.12,.76,.24,1)!important}'+
+    '.pitch-player-v129 .shirt:before{content:"";position:absolute;left:50%;top:-5px;transform:translateX(-50%);width:0;height:0;border-left:2px solid transparent;border-right:2px solid transparent;border-bottom:4px solid #ffffffb5;opacity:.42}'+
+    '.pitch-player-v129.onball .shirt:before{border-bottom-color:#fff278;opacity:1}.pitch-player-v129.press-v131 .shirt{outline:2px solid #ff8d8d88!important;outline-offset:2px!important}.pitch-player-v129.support-v131 .shirt{box-shadow:0 0 0 2px #78d8ff48,0 2px 4px #000c!important}.pitch-player-v129.run-v131 .shirt{box-shadow:0 0 0 2px #9df39145,0 2px 4px #000c!important}'+
+    '.tactical-overlay-v131{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}.tactical-overlay-v131 .pass{fill:none;stroke:#dff7ff70;stroke-width:.48;stroke-dasharray:1.2 1.3;vector-effect:non-scaling-stroke}.tactical-overlay-v131 .run{fill:none;stroke:#b9ffb070;stroke-width:.5;stroke-dasharray:2 1.4;vector-effect:non-scaling-stroke}.tactical-overlay-v131 .press{fill:none;stroke:#ff9a9a6b;stroke-width:.48;stroke-dasharray:1 1;vector-effect:non-scaling-stroke}.tactical-overlay-v131 .line-us{stroke:#70b8ff55;stroke-width:.38;stroke-dasharray:1 1.2;vector-effect:non-scaling-stroke}.tactical-overlay-v131 .line-them{stroke:#ff777755;stroke-width:.38;stroke-dasharray:1 1.2;vector-effect:non-scaling-stroke}.tactical-overlay-v131 .zone{fill:#ffffff08;stroke:none}'+
+    '.action-chip-v131{position:absolute;left:7px;top:7px;z-index:14;display:flex;gap:4px;align-items:center;padding:3px 6px;border-radius:999px;background:#07110dcc;border:1px solid #ffffff25;color:#dce9df;font-size:7px;font-weight:900;letter-spacing:.025em;pointer-events:none}.action-chip-v131 b{color:#fff}.action-chip-v131 .dot{width:5px;height:5px;border-radius:50%;background:#72d891;box-shadow:0 0 8px #72d89199}.action-chip-v131.danger .dot{background:#ff7777;box-shadow:0 0 8px #ff777799}'+
+    '.pitch-player-v129 .nm{opacity:.18!important}.pitch-player-v129.nearball .nm,.pitch-player-v129.onball .nm,.pitch-player-v129.press-v131 .nm,.pitch-player-v129.support-v131 .nm,.pitch-player-v129.run-v131 .nm,.pitch-player-v129.target .nm{opacity:.96!important}'+
+    '.flow-ball-v95{z-index:10!important}.ball-owner-v129{z-index:12!important}'+
+    '@media(max-width:560px){.tactical-overlay-v131{opacity:.75}.action-chip-v131{display:none}.pitch-player-v129 .nm{opacity:.08!important}.pitch-player-v129.nearball .nm,.pitch-player-v129.onball .nm,.pitch-player-v129.press-v131 .nm{opacity:.95!important}}';
+  document.head.appendChild(style);
+
+  function posOf131(el){
+    return{x:parseFloat(el.style.left)||50,y:parseFloat(el.style.top)||50};
+  }
+  function dist131(a,b){
+    return Math.hypot((a.x-b.x)*1.03,(a.y-b.y)*.72);
+  }
+  function playerEls131(side){
+    return [...els.matchBox.querySelectorAll('.pitch-player-v129.'+side)];
+  }
+  function nearestEl131(side,pt,exclude=null){
+    let best=null,bd=999;
+    for(const el of playerEls131(side)){
+      if(el===exclude)continue;
+      const d=dist131(posOf131(el),pt);
+      if(d<bd){bd=d;best=el}
+    }
+    return best;
+  }
+  function line131(cls,a,b){
+    return '<line class="'+cls+'" x1="'+a.x+'" y1="'+a.y+'" x2="'+b.x+'" y2="'+b.y+'"></line>';
+  }
+  function quadratic131(cls,a,b,bend=0){
+    const mx=(a.x+b.x)/2,my=(a.y+b.y)/2+bend;
+    return '<path class="'+cls+'" d="M '+a.x+' '+a.y+' Q '+mx+' '+my+' '+b.x+' '+b.y+'"></path>';
+  }
+  function defendingLineX131(side){
+    const xs=playerEls131(side)
+      .filter(el=>!el.classList.contains('gk'))
+      .map(el=>posOf131(el).x)
+      .sort((a,b)=>a-b);
+    if(!xs.length)return null;
+    if(side==='us')return xs[Math.min(3,xs.length-1)];
+    return xs[Math.max(0,xs.length-4)];
+  }
+  function actionName131(M){
+    const st=M.livePlayV129||{};
+    if(st.type==='corner')return'Balón parado · córner';
+    if(st.type==='throwin')return'Reanudación · banda';
+    if(st.type==='freekick')return'Balón parado · falta';
+    if(st.type==='goalkick')return'Construcción desde atrás';
+    if(st.type==='shot')return'Remate';
+    if(st.type==='goal')return'Gol';
+    if(st.type==='kickoff')return'Saque de centro';
+    const bx=Number(st.x||50);
+    const side=st.side==='us'?S.club:M.opp;
+    if((st.side==='us'&&bx>78)||(st.side==='them'&&bx<22))return side+' · ataque peligroso';
+    if(bx>40&&bx<60)return side+' · circulación';
+    return side+' · progresión';
+  }
+  function dynamicOverlay131(M){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');if(!pitch)return;
+    pitch.querySelectorAll('.tactical-overlay-v131,.action-chip-v131').forEach(x=>x.remove());
+    playerEls131('us').concat(playerEls131('them')).forEach(el=>el.classList.remove('press-v131','support-v131','run-v131'));
+
+    const st=M.livePlayV129||{};
+    if(st.type!=='open'&&st.type!=='shot')return;
+
+    const side=st.side==='them'?'them':'us',other=side==='us'?'them':'us';
+    const ball={x:Number(st.x||M.ballXV95||50),y:Number(st.y||M.ballYV95||50)};
+    const carrier=nearestEl131(side,ball);
+    const presser=nearestEl131(other,ball);
+    const mates=playerEls131(side)
+      .filter(el=>el!==carrier&&!el.classList.contains('gk'))
+      .map(el=>({el,p:posOf131(el),d:dist131(posOf131(el),ball)}))
+      .sort((a,b)=>a.d-b.d);
+    const defenders=playerEls131(other).filter(el=>!el.classList.contains('gk'));
+
+    if(carrier)carrier.classList.add('onball','nearball');
+    if(presser)presser.classList.add('press-v131','nearball');
+    mates.slice(0,2).forEach(x=>x.el.classList.add('support-v131','nearball'));
+
+    const direction=side==='us'?1:-1;
+    const run=mates
+      .filter(x=>direction>0?x.p.x>ball.x+5:x.p.x<ball.x-5)
+      .sort((a,b)=>b.d-a.d)[0]||mates[2];
+    if(run)run.el.classList.add('run-v131');
+
+    let svg='';
+    if(carrier){
+      const cp=posOf131(carrier);
+      mates.slice(0,2).forEach((x,i)=>{svg+=quadratic131('pass',cp,x.p,i===0?-2:2)});
+      if(run)svg+=quadratic131('run',run.p,{x:clamp(run.p.x+direction*8,4,96),y:clamp(run.p.y+(run.p.y<50?-3:3),5,95)},-1);
+      if(presser)svg+=quadratic131('press',posOf131(presser),cp,1.5);
+    }
+
+    const usX=defendingLineX131('us'),themX=defendingLineX131('them');
+    if(Number.isFinite(usX))svg+='<line class="line-us" x1="'+usX+'" y1="8" x2="'+usX+'" y2="92"></line>';
+    if(Number.isFinite(themX))svg+='<line class="line-them" x1="'+themX+'" y1="8" x2="'+themX+'" y2="92"></line>';
+
+    // Sombreado muy suave del espacio entre las líneas defensivas.
+    if(Number.isFinite(usX)&&Number.isFinite(themX)){
+      const x=Math.min(usX,themX),w=Math.abs(themX-usX);
+      svg+='<rect class="zone" x="'+x+'" y="7" width="'+w+'" height="86"></rect>';
+    }
+
+    pitch.insertAdjacentHTML('beforeend',
+      '<svg class="tactical-overlay-v131" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">'+svg+'</svg>'+
+      '<span class="action-chip-v131 '+((((side==='us'&&ball.x>78)||(side==='them'&&ball.x<22)))?'danger':'')+'"><span class="dot"></span><b>'+esc(actionName131(M))+'</b></span>'
+    );
+  }
+  function reduceLabelClutter131(M){
+    const st=M.livePlayV129||{},ball={x:Number(st.x||50),y:Number(st.y||50)};
+    els.matchBox.querySelectorAll('.pitch-player-v129').forEach(el=>{
+      const d=dist131(posOf131(el),ball);
+      el.classList.toggle('nearball',d<18||el.classList.contains('onball')||el.classList.contains('press-v131'));
+    });
+  }
+
+  const renderBaseV131=renderMatch;
+  renderMatch=function(M){
+    renderBaseV131(M);
+    if(!M)return;
+    dynamicOverlay131(M);
+    reduceLabelClutter131(M);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
