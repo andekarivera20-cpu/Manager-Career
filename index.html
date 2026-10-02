@@ -11613,6 +11613,179 @@ loadDB=async function(){
 })();
 
 
+
+// ===== REAL KITS + MATCH VISUALS 10.37 =====
+// Equipaciones reconocibles por club + jugadores tipo camiseta en vista cenital.
+// Mantiene el 2D persistente y la lógica espacial coherente 10.36.
+(function(){
+  const KIT_V137={
+    // España
+    'Athletic Club':{p:'#d71920',home:'repeating-linear-gradient(90deg,#d71920 0 3px,#ffffff 3px 6px)',away:'#151515'},
+    'Atlético Madrid':{p:'#d71920',home:'repeating-linear-gradient(90deg,#d71920 0 3px,#ffffff 3px 6px)',away:'#173c72'},
+    'FC Barcelona':{p:'#244a9b',home:'repeating-linear-gradient(90deg,#244a9b 0 3px,#8d153a 3px 6px)',away:'#e8d94a'},
+    'Real Madrid':{p:'#f5f5f5',home:'#f5f5f5',away:'#392b76',darkText:true},
+    'Real Sociedad':{p:'#1674c1',home:'repeating-linear-gradient(90deg,#1674c1 0 3px,#ffffff 3px 6px)',away:'#202d59'},
+    'Real Betis Balompié':{p:'#159447',home:'repeating-linear-gradient(90deg,#159447 0 3px,#ffffff 3px 6px)',away:'#202020'},
+    'Sevilla FC':{p:'#ffffff',home:'#ffffff',away:'#d71920',darkText:true},
+    'Valencia CF':{p:'#ffffff',home:'linear-gradient(180deg,#ffffff 0 68%,#161616 68%)',away:'#e56b1f',darkText:true},
+    'Villarreal CF':{p:'#f4df27',home:'#f4df27',away:'#342b70',darkText:true},
+    'CA Osasuna':{p:'#c9152b',home:'linear-gradient(180deg,#c9152b 0 70%,#19365f 70%)',away:'#63b7cf'},
+    'RC Celta':{p:'#8fd0ed',home:'#8fd0ed',away:'#c92437',darkText:true},
+    'RCD Espanyol':{p:'#176db4',home:'repeating-linear-gradient(90deg,#176db4 0 3px,#ffffff 3px 6px)',away:'#222222'},
+    'Deportivo Alavés':{p:'#176db4',home:'repeating-linear-gradient(90deg,#176db4 0 3px,#ffffff 3px 6px)',away:'#202020'},
+    'Getafe CF':{p:'#145cac',home:'#145cac',away:'#e54444'},
+    'Rayo Vallecano':{p:'#ffffff',home:'linear-gradient(135deg,#ffffff 0 41%,#d71920 42% 57%,#ffffff 58%)',away:'#161616',darkText:true},
+    'Levante UD':{p:'#233c86',home:'repeating-linear-gradient(90deg,#233c86 0 3px,#a42034 3px 6px)',away:'#ffffff'},
+    'Málaga CF':{p:'#5db8dd',home:'repeating-linear-gradient(90deg,#5db8dd 0 3px,#ffffff 3px 6px)',away:'#38206f',darkText:true},
+    'Racing Santander':{p:'#17804a',home:'linear-gradient(180deg,#ffffff 0 68%,#17804a 68%)',away:'#191919',darkText:true},
+    'Elche CF':{p:'#ffffff',home:'linear-gradient(180deg,#ffffff 0 42%,#159447 42% 56%,#ffffff 56%)',away:'#151515',darkText:true},
+    'RC Deportivo A Coruña':{p:'#1c65b4',home:'repeating-linear-gradient(90deg,#1c65b4 0 3px,#ffffff 3px 6px)',away:'#191919'},
+
+    // Inglaterra
+    'Arsenal FC':{p:'#d71920',home:'linear-gradient(90deg,#ffffff 0 18%,#d71920 18% 82%,#ffffff 82%)',away:'#151515'},
+    'Liverpool FC':{p:'#c8102e',home:'#c8102e',away:'#ffffff'},
+    'Manchester United':{p:'#da291c',home:'#da291c',away:'#111111'},
+    'Manchester City':{p:'#6cabdd',home:'#6cabdd',away:'#212121',darkText:true},
+    'Chelsea FC':{p:'#034694',home:'#034694',away:'#f0e34b'},
+    'Tottenham Hotspur':{p:'#ffffff',home:'linear-gradient(180deg,#ffffff 0 68%,#132257 68%)',away:'#242424',darkText:true},
+    'Newcastle United':{p:'#1a1a1a',home:'repeating-linear-gradient(90deg,#111111 0 3px,#ffffff 3px 6px)',away:'#4e83c2'},
+    'Aston Villa':{p:'#7a263a',home:'linear-gradient(90deg,#95c7e8 0 18%,#7a263a 18% 82%,#95c7e8 82%)',away:'#ffffff'},
+    'Everton FC':{p:'#16469d',home:'#16469d',away:'#efcf3d'},
+    'West Ham United':{p:'#7a263a',home:'linear-gradient(90deg,#7a263a 0 72%,#69b3e7 72%)',away:'#ffffff'},
+    'Brighton & Hove Albion':{p:'#176db4',home:'repeating-linear-gradient(90deg,#176db4 0 3px,#ffffff 3px 6px)',away:'#f1df27'},
+    'Crystal Palace':{p:'#1b458f',home:'repeating-linear-gradient(90deg,#1b458f 0 3px,#c51e3a 3px 6px)',away:'#eeeeee'},
+    'Wolverhampton Wanderers':{p:'#fdb913',home:'#fdb913',away:'#202020',darkText:true},
+    'Leeds United':{p:'#ffffff',home:'#ffffff',away:'#203f91',darkText:true},
+    'Nottingham Forest':{p:'#dd0000',home:'#dd0000',away:'#202020'},
+    'Fulham FC':{p:'#ffffff',home:'linear-gradient(180deg,#ffffff 0 72%,#111111 72%)',away:'#d71920',darkText:true},
+    'Brentford':{p:'#d71920',home:'repeating-linear-gradient(90deg,#d71920 0 3px,#ffffff 3px 6px)',away:'#202020'},
+    'Sunderland AFC':{p:'#d71920',home:'repeating-linear-gradient(90deg,#d71920 0 3px,#ffffff 3px 6px)',away:'#222222'},
+    'Burnley':{p:'#6c1d45',home:'linear-gradient(90deg,#8ec9e8 0 18%,#6c1d45 18% 82%,#8ec9e8 82%)',away:'#ffffff'},
+
+    // Alemania
+    'Bayern München':{p:'#dc052d',home:'#dc052d',away:'#202020'},
+    'Bayer 04 Leverkusen':{p:'#d71920',home:'repeating-linear-gradient(90deg,#d71920 0 4px,#191919 4px 8px)',away:'#ffffff'},
+    'Borussia Dortmund':{p:'#fdeb0b',home:'#fdeb0b',away:'#181818',darkText:true},
+    'RB Leipzig':{p:'#ffffff',home:'linear-gradient(135deg,#ffffff 0 60%,#d71920 60% 70%,#ffffff 70%)',away:'#17285a',darkText:true},
+    'Eintracht Frankfurt':{p:'#202020',home:'repeating-linear-gradient(90deg,#202020 0 4px,#d71920 4px 8px)',away:'#ffffff'},
+    'VfB Stuttgart':{p:'#ffffff',home:'linear-gradient(180deg,#ffffff 0 42%,#d71920 42% 56%,#ffffff 56%)',away:'#202020',darkText:true},
+    'Werder Bremen':{p:'#159447',home:'#159447',away:'#ffffff'},
+    'Borussia Mönchengladbach':{p:'#ffffff',home:'linear-gradient(180deg,#ffffff 0 70%,#202020 70%)',away:'#159447',darkText:true},
+
+    // Italia
+    'Inter Milan':{p:'#174a9b',home:'repeating-linear-gradient(90deg,#174a9b 0 4px,#111111 4px 8px)',away:'#ffffff'},
+    'AC Milan':{p:'#d71920',home:'repeating-linear-gradient(90deg,#d71920 0 3px,#111111 3px 6px)',away:'#ffffff'},
+    'Juventus FC':{p:'#111111',home:'repeating-linear-gradient(90deg,#111111 0 3px,#ffffff 3px 6px)',away:'#e0c44e'},
+    'Napoli':{p:'#4b9bd5',home:'#4b9bd5',away:'#ffffff',darkText:true},
+    'AS Roma':{p:'#8e1f2d',home:'linear-gradient(180deg,#8e1f2d 0 75%,#e9a51a 75%)',away:'#ffffff'},
+    'Lazio':{p:'#87c8e5',home:'#87c8e5',away:'#202020',darkText:true},
+    'Fiorentina':{p:'#5f259f',home:'#5f259f',away:'#ffffff'},
+    'Torino FC':{p:'#7b2639',home:'#7b2639',away:'#ffffff'},
+    'Bologna FC':{p:'#143a73',home:'repeating-linear-gradient(90deg,#143a73 0 4px,#a51c30 4px 8px)',away:'#ffffff'},
+
+    // Francia / Portugal / Países Bajos
+    'Paris Saint-Germain':{p:'#193b73',home:'linear-gradient(90deg,#193b73 0 42%,#d71920 42% 58%,#193b73 58%)',away:'#ffffff'},
+    'Olympique de Marseille':{p:'#ffffff',home:'linear-gradient(180deg,#ffffff 0 76%,#57b9df 76%)',away:'#173f7a',darkText:true},
+    'Olympique Lyonnais':{p:'#ffffff',home:'linear-gradient(90deg,#ffffff 0 60%,#d71920 60% 70%,#174a9b 70%)',away:'#202020',darkText:true},
+    'AS Monaco':{p:'#d71920',home:'linear-gradient(135deg,#d71920 0 50%,#ffffff 50%)',away:'#202020'},
+    'SL Benfica':{p:'#d71920',home:'#d71920',away:'#ffffff'},
+    'FC Porto':{p:'#176db4',home:'repeating-linear-gradient(90deg,#176db4 0 3px,#ffffff 3px 6px)',away:'#202020'},
+    'Sporting CP':{p:'#159447',home:'repeating-linear-gradient(0deg,#159447 0 3px,#ffffff 3px 6px)',away:'#202020'},
+    'Ajax':{p:'#ffffff',home:'linear-gradient(90deg,#ffffff 0 28%,#d71920 28% 72%,#ffffff 72%)',away:'#202020',darkText:true},
+    'PSV':{p:'#d71920',home:'repeating-linear-gradient(90deg,#d71920 0 3px,#ffffff 3px 6px)',away:'#202020'},
+    'Feyenoord':{p:'#d71920',home:'linear-gradient(90deg,#d71920 0 50%,#ffffff 50%)',away:'#202020'}
+  };
+
+  const FALLBACK_V137=['#2563a7','#bd2c39','#1e7b48','#6a3fa0','#d27a22','#333333','#15809c','#7b2639'];
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.flow-pitch-v95{background:linear-gradient(90deg,#ffffff05 0 1px,transparent 1px),repeating-linear-gradient(90deg,#28743c 0 8.333%,#2c7a40 8.333% 16.666%)!important;background-size:7px 100%,auto!important}'+
+    '.pitch-player-v129 .shirt{width:15px!important;height:17px!important;border:1px solid #f7fff7e8!important;border-radius:0!important;clip-path:polygon(29% 0,40% 8%,60% 8%,71% 0,100% 19%,83% 42%,76% 35%,76% 100%,24% 100%,24% 35%,17% 42%,0 19%)!important;background:var(--kit-bg-v137,#2563a7)!important;box-shadow:0 2px 5px #000c,0 0 0 1px #0004!important;position:relative!important}'+
+    '.pitch-player-v129 .shirt:after{display:none!important}.pitch-player-v129 .shirt:before{content:"";position:absolute!important;left:50%!important;top:2px!important;transform:translateX(-50%)!important;width:3px!important;height:3px!important;border:0!important;border-radius:50%!important;background:var(--kit-detail-v137,#ffffffcc)!important;opacity:.7!important}'+
+    '.pitch-player-v129.gk .shirt{background:var(--gk-bg-v137,#e0b126)!important;clip-path:polygon(25% 0,40% 8%,60% 8%,75% 0,100% 22%,83% 44%,76% 36%,76% 100%,24% 100%,24% 36%,17% 44%,0 22%)!important}'+
+    '.pitch-player-v129.onball .shirt{outline:2px solid #ffe65e!important;outline-offset:2px!important;filter:brightness(1.08)}'+
+    '.pitch-player-v129.press-v131 .shirt{outline:2px solid #ff8b8b99!important;outline-offset:2px!important}'+
+    '.pitch-player-v129 .nm{font-size:6px!important;background:#06100dc7!important;padding:1px 3px!important;margin-top:1px!important;opacity:.12!important}.pitch-player-v129.nearball .nm,.pitch-player-v129.onball .nm,.pitch-player-v129.press-v131 .nm{opacity:.96!important}'+
+    '.flow-ball-v95{width:9px!important;height:9px!important;border:1px solid #111!important;background:radial-gradient(circle at 35% 30%,#fff 0 24%,#151515 26% 35%,#f8f8f8 37% 65%,#151515 67% 76%,#fff 78%)!important;box-shadow:0 0 0 2px #fff5,0 2px 5px #000b!important}'+
+    '.pitch-goalnet-v130{background:repeating-linear-gradient(0deg,#ffffff28 0 1px,transparent 1px 4px),repeating-linear-gradient(90deg,#ffffff24 0 1px,transparent 1px 4px)!important;border-color:#ffffffcc!important}'+
+    '.kit-legend-v137{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin:4px 0 1px;font-size:8px;color:var(--muted)}.kit-team-v137{display:flex;align-items:center;gap:4px}.kit-swatch-v137{width:13px;height:14px;display:inline-block;clip-path:polygon(29% 0,40% 8%,60% 8%,71% 0,100% 19%,83% 42%,76% 35%,76% 100%,24% 100%,24% 35%,17% 42%,0 19%);border:1px solid #fff8;background:var(--swatch-v137)}'+
+    '.real2d-note-v137{font-size:8px;text-align:center;color:#819488;margin-top:2px}';
+  document.head.appendChild(style);
+
+  function normV137(name){
+    return String(name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  }
+  function findKitV137(club){
+    if(KIT_V137[club])return KIT_V137[club];
+    const n=normV137(club);
+    for(const [k,v] of Object.entries(KIT_V137)){
+      const x=normV137(k);
+      if(x===n||x.includes(n)||n.includes(x))return v;
+    }
+    let h=0;for(const c of String(club||''))h=((h<<5)-h+c.charCodeAt(0))|0;
+    const c=FALLBACK_V137[Math.abs(h)%FALLBACK_V137.length];
+    return{p:c,home:c,away:'#eeeeee'};
+  }
+  function hexRGBV137(hex){
+    const h=String(hex||'').replace('#','');
+    if(!/^[0-9a-f]{6}$/i.test(h))return null;
+    return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];
+  }
+  function clashV137(a,b){
+    const A=hexRGBV137(a?.p),B=hexRGBV137(b?.p);
+    if(!A||!B)return false;
+    return Math.hypot(A[0]-B[0],A[1]-B[1],A[2]-B[2])<95;
+  }
+  function kitsForV137(M){
+    const homeClub=M.fixture?.home||S.club,awayClub=M.fixture?.away||M.opp;
+    const hk=findKitV137(homeClub),ak=findKitV137(awayClub);
+    const awayBg=clashV137(hk,ak)?ak.away:ak.home;
+    const home={...hk,bg:hk.home},away={...ak,bg:awayBg};
+    return M.home?{us:home,them:away}:{us:away,them:home};
+  }
+  function applyKitsV137(M){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');if(!pitch)return;
+    const kits=kitsForV137(M);
+    for(const side of ['us','them']){
+      const k=kits[side];
+      pitch.querySelectorAll('.pitch-player-v129.'+side).forEach((el,i)=>{
+        el.style.setProperty('--kit-bg-v137',k.bg);
+        el.style.setProperty('--kit-detail-v137',k.darkText?'#111111aa':'#ffffffcc');
+        el.style.setProperty('--gk-bg-v137',side==='us'?'#e1b326':'#47a466');
+      });
+    }
+    const card=pitch.closest('.flow-card-v95');
+    if(card&&!card.querySelector('.kit-legend-v137')){
+      const homeName=M.fixture?.home||S.club,awayName=M.fixture?.away||M.opp;
+      const homeKit=M.home?kits.us:kits.them,awayKit=M.home?kits.them:kits.us;
+      const legend=document.createElement('div');
+      legend.className='kit-legend-v137';
+      legend.innerHTML='<span class="kit-team-v137"><i class="kit-swatch-v137" style="--swatch-v137:'+homeKit.bg+'"></i>'+esc(homeName)+'</span>'+
+        '<span class="kit-team-v137"><i class="kit-swatch-v137" style="--swatch-v137:'+awayKit.bg+'"></i>'+esc(awayName)+'</span>';
+      pitch.insertAdjacentElement('afterend',legend);
+    }
+  }
+  function cleanVisualV137(){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');if(!pitch)return;
+    // Menos líneas tácticas permanentes: se ve más como partido y menos como pizarra.
+    pitch.querySelectorAll('.tactical-overlay-v131 .line-us,.tactical-overlay-v131 .line-them,.tactical-overlay-v131 .zone').forEach(x=>x.style.opacity='.28');
+    const note=pitch.closest('.flow-card-v95');
+    if(note&&!note.querySelector('.real2d-note-v137')){
+      note.insertAdjacentHTML('beforeend','<div class="real2d-note-v137">Vista 2D · equipaciones del club · movimiento ligado a la jugada</div>');
+    }
+  }
+
+  const renderBaseV137=renderMatch;
+  renderMatch=function(M){
+    renderBaseV137(M);
+    if(!M)return;
+    applyKitsV137(M);
+    cleanVisualV137();
+  };
+})();
+
+
 loadDB();
 })();
 </script>
