@@ -10265,7 +10265,7 @@ loadDB=async function(){
       if(M.pendingDecisionV107){stopLiveV128(M);renderMatch(M);return}
       if(M.minute===45&&!M.secondHalfV95){stopLiveV128(M);renderMatch(M);return}
       if(M.minute>=90){stopLiveV128(M);return}
-      prepareMinuteV128(M);
+      if(typeof window.prepareMinuteSmoothV136==='function')window.prepareMinuteSmoothV136(M);else prepareMinuteV128(M);
       advanceMatch(M,1);
     },info.ms);
   }
@@ -11374,6 +11374,242 @@ loadDB=async function(){
 
   // Limpieza de preferencia antigua 3D.
   try{delete S?.matchViewV132}catch(e){}
+})();
+
+
+
+// ===== COHERENT LIVE PLAY 10.36 =====
+// Une el movimiento visual con las ocasiones. Un gol que no encaja con la posición
+// del balón se aplaza y se representa como transición -> último tercio -> remate -> gol.
+(function(){
+  const simulateBaseV136=simulateChance;
+
+  function liveV136(M){
+    M.livePlayV129=M.livePlayV129||{
+      type:'open',side:M.ballOursV95?'us':'them',
+      x:Number(M.ballXV95||50),y:Number(M.ballYV95||50),
+      label:'Balón en juego',hold:0,owner:null
+    };
+    return M.livePlayV129;
+  }
+  function setBallV136(M,type,side,x,y,label,hold=0){
+    const st=liveV136(M);
+    st.type=type;st.side=side;st.x=clamp(Number(x),1,99);st.y=clamp(Number(y),2,98);
+    st.label=label||type;st.hold=hold;
+    M.ballXV95=st.x;M.ballYV95=st.y;M.ballOursV95=side==='us';
+  }
+  function scoreForSideV136(M,side){
+    return side==='us'
+      ?(M.home?Number(M.hg||0):Number(M.ag||0))
+      :(M.home?Number(M.ag||0):Number(M.hg||0));
+  }
+  function snapshotPlayersV136(){
+    const out={};
+    for(const id of (S.lineup||[])){
+      const p=S.players.find(x=>String(x.id)===String(id));if(!p)continue;
+      out[String(id)]={goals:Number(p.goals||0),assists:Number(p.assists||0),morale:Number(p.morale||70)};
+    }
+    return out;
+  }
+  function restorePlayersV136(before){
+    for(const [id,b] of Object.entries(before||{})){
+      const p=S.players.find(x=>String(x.id)===String(id));if(!p)continue;
+      p.goals=b.goals;p.assists=b.assists;p.morale=b.morale;
+    }
+  }
+  function playerDeltasV136(before){
+    const out=[];
+    for(const [id,b] of Object.entries(before||{})){
+      const p=S.players.find(x=>String(x.id)===String(id));if(!p)continue;
+      const dg=Number(p.goals||0)-b.goals,da=Number(p.assists||0)-b.assists,dm=Number(p.morale||70)-b.morale;
+      if(dg||da||dm)out.push({id,dg,da,dm});
+    }
+    return out;
+  }
+  function applyPlayerDeltasV136(ds){
+    for(const d of (ds||[])){
+      const p=S.players.find(x=>String(x.id)===String(d.id));if(!p)continue;
+      p.goals=Number(p.goals||0)+Number(d.dg||0);
+      p.assists=Number(p.assists||0)+Number(d.da||0);
+      p.morale=clamp(Number(p.morale||70)+Number(d.dm||0),20,100);
+    }
+  }
+  function goalPlausibleV136(side,before){
+    const x=Number(before.x||50);
+    if(before.type==='shot'&&before.side===side)return true;
+    if(['corner','freekick'].includes(before.type)&&before.side===side){
+      return side==='us'?x>=68:x<=32;
+    }
+    if(before.side!==side)return false;
+    return side==='us'?x>=74:x<=26;
+  }
+  function removeNewGoalEventsV136(M,fromIndex){
+    let goalEvent=null;
+    for(let i=(M.events||[]).length-1;i>=fromIndex;i--){
+      const e=M.events[i];
+      if(e?.cls==='goal'||/¡?GOL|Gol de /i.test(String(e?.text||''))){
+        if(!goalEvent)goalEvent={...e};
+        M.events.splice(i,1);
+      }
+    }
+    return goalEvent;
+  }
+  function scheduleGoalV136(M,side,before,event,shotDeltaMy,shotDeltaOpp,pDeltas){
+    const startX=Number(before.x||50),startY=Number(before.y||50);
+    const same=before.side===side;
+    let phase=0;
+    if(same){
+      if(side==='us'&&startX>=55)phase=1;
+      if(side==='them'&&startX<=45)phase=1;
+      if(side==='us'&&startX>=72)phase=2;
+      if(side==='them'&&startX<=28)phase=2;
+    }
+    M.pendingGoalV136={
+      side,phase,event:event||{text:'⚽ '+M.minute+"' Gol de "+(side==='us'?S.club:M.opp)+'.',cls:'goal',side},
+      shotDeltaMy,shotDeltaOpp,pDeltas,
+      startMinute:M.minute
+    };
+    // La recuperación ocurre donde estaba el balón: nada de teletransportarlo al otro área.
+    setBallV136(M,'open',side,startX,startY,same?'Ataque en progresión':'Recuperación y transición',0);
+    if(!same){
+      M.events.push({
+        text:'⚡ '+M.minute+"' "+(side==='us'?S.club:M.opp)+' recupera y sale a la contra.',
+        side
+      });
+    }
+  }
+  function completeGoalV136(M,p){
+    const side=p.side;
+    if(side==='us'){if(M.home)M.hg++;else M.ag++}
+    else{if(M.home)M.ag++;else M.hg++}
+    M.myShots=Number(M.myShots||0)+Number(p.shotDeltaMy||0);
+    M.oppShots=Number(M.oppShots||0)+Number(p.shotDeltaOpp||0);
+    applyPlayerDeltasV136(p.pDeltas);
+    const ev={...p.event,side,cls:'goal'};
+    if(!/^\s*⚽/.test(String(ev.text||'')))ev.text='⚽ '+String(ev.text||'Gol');
+    M.events.push(ev);
+    setBallV136(M,'goal',side,side==='us'?98.7:1.3,50,'⚽ GOL',1);
+    M.pendingGoalV136=null;
+  }
+  function progressPendingGoalV136(M){
+    const p=M.pendingGoalV136;if(!p)return false;
+    const side=p.side,st=liveV136(M),dir=side==='us'?1:-1;
+    p.phase=Number(p.phase||0)+1;
+
+    if(p.phase===1){
+      const x=side==='us'?Math.max(58,Number(st.x||50)+18):Math.min(42,Number(st.x||50)-18);
+      setBallV136(M,'open',side,x,clamp(Number(st.y||50)+rnd(-9,9),16,84),'Transición ofensiva');
+    }else if(p.phase===2){
+      setBallV136(M,'open',side,side==='us'?76:24,clamp(Number(st.y||50)+rnd(-8,8),20,80),'Entrada en último tercio');
+      M.events.push({text:'▶ '+M.minute+"' "+(side==='us'?S.club:M.opp)+' acelera y entra en el último tercio.',side});
+    }else if(p.phase===3){
+      setBallV136(M,'shot',side,side==='us'?90:10,clamp(50+rnd(-15,15),25,75),'🎯 Remate');
+      M.events.push({text:'🎯 '+M.minute+"' Remate de "+(side==='us'?S.club:M.opp)+'.',side});
+    }else{
+      completeGoalV136(M,p);
+    }
+    return true;
+  }
+
+  // Movimiento por minuto: continuidad espacial y cambios de posesión en el mismo punto.
+  window.prepareMinuteSmoothV136=function(M){
+    const st=liveV136(M);
+
+    if(progressPendingGoalV136(M))return;
+
+    if(st.type==='goal'){
+      const next=st.side==='us'?'them':'us';
+      setBallV136(M,'kickoff',next,50,50,'Saque de centro',1);
+      return;
+    }
+    if(st.hold>0){st.hold--;return}
+    if(['corner','throwin','freekick','goalkick','kickoff','shot'].includes(st.type)){
+      const side=st.side;
+      const dir=side==='us'?1:-1;
+      setBallV136(M,'open',side,clamp(Number(st.x||50)+dir*rnd(4,9),6,94),clamp(Number(st.y||50)+rnd(-7,7),7,93),'Balón en juego');
+      return;
+    }
+
+    let side=st.side==='them'?'them':'us';
+    let x=Number(st.x||M.ballXV95||50),y=Number(st.y||M.ballYV95||50);
+
+    // Pérdidas/recuperaciones ocurren donde está el balón, no en otro sector.
+    const turnoverChance=.105+(S.mentality==='Ofensiva'?.015:0);
+    if(Math.random()<turnoverChance){
+      side=side==='us'?'them':'us';
+      setBallV136(M,'open',side,x,clamp(y+rnd(-5,5),7,93),'Cambio de posesión');
+      return;
+    }
+
+    const momentum=clamp(Number(M.momentum||50),20,80);
+    const advantage=side==='us'?(momentum-50):(50-momentum);
+    let step=clamp(6+advantage*.055+rnd(-2,3),3,11);
+    if(Math.random()<.16)step=-rnd(2,5); // pase atrás / apoyo
+    x+=side==='us'?step:-step;
+    y=clamp(y+rnd(-9,9),7,93);
+
+    if(side==='us'&&x>=95){
+      setBallV136(M,'goalkick','them',93,50,'Saque de puerta',1);
+      return;
+    }
+    if(side==='them'&&x<=5){
+      setBallV136(M,'goalkick','us',7,50,'Saque de puerta',1);
+      return;
+    }
+    setBallV136(M,'open',side,clamp(x,5,95),y,'Balón en juego');
+  };
+
+  simulateChance=function(M){
+    // Mientras se está representando una ocasión de gol, no generamos otra encima.
+    if(M.pendingGoalV136){
+      M.momentum=clamp(Number(M.momentum||50)+rnd(-2,2),15,85);
+      return;
+    }
+
+    const beforePlay={...liveV136(M)};
+    const beforeScore={hg:Number(M.hg||0),ag:Number(M.ag||0),myShots:Number(M.myShots||0),oppShots:Number(M.oppShots||0)};
+    const beforeEvents=(M.events||[]).length;
+    const beforePlayers=snapshotPlayersV136();
+
+    simulateBaseV136(M);
+
+    const myBefore=M.home?beforeScore.hg:beforeScore.ag;
+    const opBefore=M.home?beforeScore.ag:beforeScore.hg;
+    const myAfter=M.home?Number(M.hg||0):Number(M.ag||0);
+    const opAfter=M.home?Number(M.ag||0):Number(M.hg||0);
+    const myGoal=myAfter>myBefore,oppGoal=opAfter>opBefore;
+
+    if(!(myGoal||oppGoal))return;
+
+    const side=myGoal?'us':'them';
+    if(goalPlausibleV136(side,beforePlay))return;
+
+    // Revertimos solo el gol recién generado y lo convertimos en una jugada visual coherente.
+    M.hg=beforeScore.hg;M.ag=beforeScore.ag;
+    const shotDeltaMy=Number(M.myShots||0)-beforeScore.myShots;
+    const shotDeltaOpp=Number(M.oppShots||0)-beforeScore.oppShots;
+    M.myShots=beforeScore.myShots;M.oppShots=beforeScore.oppShots;
+
+    const pDeltas=playerDeltasV136(beforePlayers);
+    restorePlayersV136(beforePlayers);
+    const event=removeNewGoalEventsV136(M,beforeEvents);
+
+    scheduleGoalV136(M,side,beforePlay,event,shotDeltaMy,shotDeltaOpp,pDeltas);
+  };
+
+  // Refuerzo visual: el estado de transición se identifica en el campo.
+  const renderBaseV136=renderMatch;
+  renderMatch=function(M){
+    renderBaseV136(M);
+    if(!M)return;
+    const p=M.pendingGoalV136;
+    const chip=els.matchBox.querySelector('.action-chip-v131');
+    if(chip&&p){
+      const labels=['Transición','Contraataque','Último tercio','Remate'];
+      chip.innerHTML='<span class="dot"></span><b>'+esc((p.side==='us'?S.club:M.opp)+' · '+(labels[Math.min(3,Number(p.phase||0))]||'Ataque'))+'</b>';
+      chip.classList.toggle('danger',p.phase>=2);
+    }
+  };
 })();
 
 
