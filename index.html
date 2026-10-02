@@ -12489,6 +12489,160 @@ loadDB=async function(){
 })();
 
 
+
+// ===== PACED COMMENTARY + VISUAL FILTERS 10.40 =====
+// El relato no vuelca varias acciones de golpe: mantiene una cola visual y las
+// revela una a una. Además compacta los textos ricos 10.39 y hace los filtros
+// del avance visibles/intuitivos en vez de un botón de engranaje sin etiqueta.
+(function(){
+  const paceStatesV140=new WeakMap();
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.commentary-v140-status{position:sticky;bottom:-8px;display:flex;align-items:center;justify-content:space-between;gap:6px;margin:6px -8px -8px;padding:5px 8px;background:#07110df2;border-top:1px solid var(--line);font-size:8px;color:var(--muted);z-index:3}'+
+    '.commentary-v140-status .live{display:inline-flex;align-items:center;gap:4px}.commentary-v140-status .live:before{content:"";width:5px;height:5px;border-radius:50%;background:#70d78d;box-shadow:0 0 0 3px #70d78d1b}'+
+    '.commentary .event.flow-v139,.commentary .event.build-v139,.commentary .event.chance-v139,.commentary .event.danger-v139,.commentary .event.goal-context-v139{font-size:11px!important;line-height:1.35!important;padding:7px 8px!important}'+
+    '.home-settings-v109{min-width:112px!important;padding-left:11px!important;padding-right:11px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;border-color:#41604d!important;background:#102019!important}'+
+    '.home-settings-v109 .filter-count-v140{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border-radius:999px;background:#284833;color:#c8f0d2;font-size:8px;font-weight:950}'+
+    '.home-stop-grid-v109{gap:7px!important}.home-stop-v109{position:relative;display:grid!important;grid-template-columns:26px 1fr 20px!important;align-items:center!important;gap:8px!important;padding:10px!important;border:1px solid var(--line)!important;border-radius:10px!important;background:#0a1610!important;cursor:pointer!important;font-size:10px!important;font-weight:850!important;min-height:48px}'+
+    '.home-stop-v109:has(input:checked){background:#14291c!important;border-color:#4e805e!important;box-shadow:inset 0 0 0 1px #4e805e33!important}.home-stop-v109 input{grid-column:3;width:17px;height:17px;min-height:0!important;accent-color:var(--accent);margin:0}.filter-icon-v140{grid-column:1;grid-row:1;display:grid;place-items:center;width:26px;height:26px;border-radius:7px;background:#17261e;font-size:14px}.filter-label-v140{grid-column:2;grid-row:1;min-width:0}'+
+    '.filters-help-v140{margin:7px 0 10px;padding:7px 9px;border-radius:8px;background:#0b1811;border:1px solid #243b2d;font-size:9px;color:var(--muted)}'+
+    '@media(max-width:560px){.home-settings-v109{min-width:0!important}.home-stop-grid-v109{grid-template-columns:1fr!important}}';
+  document.head.appendChild(style);
+
+  function intervalV140(M){
+    const speed=Number(M?.uiV128?.speed||1);
+    if(speed<=.5)return 360;
+    if(speed<=1)return 210;
+    if(speed<=2)return 125;
+    return 70;
+  }
+  function compactTextV140(text){
+    let t=String(text||'').replace(/\s+/g,' ').trim();
+    // Los goles, tarjetas, lesiones y reanudaciones oficiales se mantienen intactos.
+    if(/⚽|🟨|🤕|🚑|Descanso|segunda parte|Cambio:|Córner|Saque de puerta|Saque de banda/i.test(t))return t;
+    const minute=(t.match(/^(\d{1,3}'\s*)/)||[])[1]||'';
+    let body=minute?t.slice(minute.length):t;
+    const sentences=body.split(/(?<=[.!?])\s+/).filter(Boolean);
+    body=sentences[0]||body;
+    if(body.length<44&&sentences[1]&&(body+' '+sentences[1]).length<=92)body+=' '+sentences[1];
+    if(body.length>92){
+      body=body.slice(0,89);
+      const cut=body.lastIndexOf(' ');
+      if(cut>58)body=body.slice(0,cut);
+      body+='…';
+    }
+    return minute+body;
+  }
+  function compactEventV140(e){
+    return {...e,text:compactTextV140(e?.text)};
+  }
+  function stateV140(M){
+    let st=paceStatesV140.get(M);
+    if(st)return st;
+    st={known:new WeakSet(),visible:[],queue:[],timer:null};
+    for(const e of (M.events||[])){
+      if(e&&typeof e==='object')st.known.add(e);
+      st.visible.push(e);
+    }
+    paceStatesV140.set(M,st);
+    return st;
+  }
+  function renderPacedV140(M){
+    const box=els.matchBox.querySelector('.commentary');if(!box)return;
+    const st=stateV140(M);
+    const rows=st.visible.slice(-45).reverse();
+    box.innerHTML=(rows.length?rows.map(raw=>{
+      const e=compactEventV140(raw);
+      return '<div class="event '+(e.cls||'')+' '+(e.side==='us'?'team-us-v97':e.side==='them'?'team-them-v97':'')+'">'+esc(e.text)+'</div>';
+    }).join(''):'<div class="event muted">Rueda el balón.</div>')+
+      '<div class="commentary-v140-status"><span class="live">Relato en directo</span><span>'+(st.queue.length?st.queue.length+' acción'+(st.queue.length===1?'':'es')+' en curso':'siguiendo el juego')+'</span></div>';
+  }
+  function drainV140(M){
+    const st=stateV140(M);
+    if(st.timer||!st.queue.length)return;
+    const step=()=>{
+      st.timer=null;
+      if(!st.queue.length)return;
+      st.visible.push(st.queue.shift());
+      if(st.visible.length>70)st.visible=st.visible.slice(-70);
+      renderPacedV140(M);
+      if(st.queue.length)st.timer=setTimeout(step,intervalV140(M));
+    };
+    st.timer=setTimeout(step,Math.min(120,intervalV140(M)));
+  }
+  function syncPaceV140(M){
+    const st=stateV140(M);
+    for(const e of (M.events||[])){
+      if(!e||typeof e!=='object'||st.known.has(e))continue;
+      st.known.add(e);
+      st.queue.push(e);
+    }
+    renderPacedV140(M);
+    drainV140(M);
+  }
+
+  const renderMatchV140Base=renderMatch;
+  renderMatch=function(M){
+    renderMatchV140Base(M);
+    if(!M)return;
+    syncPaceV140(M);
+  };
+
+  const FILTER_ICONS_V140={
+    training:'🏋️',job:'💼',bid:'💰',press:'🎙️',medical:'🩺',
+    conflict:'💬',scouting:'🔎',national:'🌍',market:'📈',rumor:'📰'
+  };
+  function filterCountV140(){
+    return Object.values(S.advanceStops||{}).filter(Boolean).length;
+  }
+  function decorateFilterButtonV140(){
+    const b=document.getElementById('homeStopsV109');if(!b)return;
+    b.title='Elegir cuándo debe detenerse el avance';
+    b.innerHTML='🎚️ <span>Filtros</span><span class="filter-count-v140">'+filterCountV140()+'</span>';
+    if(b.dataset.v140)return;
+    b.dataset.v140='1';
+    const old=b.onclick;
+    b.onclick=e=>{
+      if(typeof old==='function')old.call(b,e);
+      setTimeout(decorateFiltersModalV140,0);
+    };
+  }
+  function decorateFiltersModalV140(){
+    const h=[...els.matchBox.querySelectorAll('h2')].find(x=>/Paradas del avance|Filtros del avance/i.test(x.textContent||''));
+    if(!h)return;
+    h.textContent='🎚️ Filtros del avance';
+    const p=h.parentElement?.nextElementSibling;
+    if(p&&p.tagName==='P')p.textContent='Elige qué eventos deben detener el avance automático. Los partidos siempre paran.';
+    const grid=els.matchBox.querySelector('.home-stop-grid-v109');
+    if(grid&&!grid.previousElementSibling?.classList?.contains('filters-help-v140')){
+      grid.insertAdjacentHTML('beforebegin','<div class="filters-help-v140">Activa solo lo que quieras revisar personalmente. Las opciones verdes están activas.</div>');
+    }
+    els.matchBox.querySelectorAll('.home-stop-v109').forEach(label=>{
+      const input=label.querySelector('input[data-stop]');if(!input)return;
+      const key=input.dataset.stop;
+      if(!label.querySelector('.filter-icon-v140')){
+        const text=[...label.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(' ').trim();
+        [...label.childNodes].filter(n=>n.nodeType===3).forEach(n=>n.remove());
+        input.insertAdjacentHTML('beforebegin','<span class="filter-icon-v140">'+(FILTER_ICONS_V140[key]||'•')+'</span><span class="filter-label-v140">'+esc(text||key)+'</span>');
+      }
+      input.addEventListener('change',()=>{
+        setTimeout(()=>{
+          const count=filterCountV140();
+          document.querySelectorAll('.filter-count-v140').forEach(x=>x.textContent=count);
+        },0);
+      },{once:false});
+    });
+  }
+
+  const renderHomeV140Base=renderHome;
+  renderHome=function(){
+    renderHomeV140Base();
+    decorateFilterButtonV140();
+  };
+})();
+
+
 loadDB();
 })();
 </script>
