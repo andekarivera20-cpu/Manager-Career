@@ -10189,6 +10189,248 @@ loadDB=async function(){
 })();
 
 
+
+// ===== MATCH EXPERIENCE 2.2 10.28 =====
+// Velocidad regulable sincronizada con minuto+balón, salto real al 90',
+// relato junto al campo y lectura permanente de la posición de la pelota.
+(function(){
+  let timerV128=null;
+  let activeMatchV128=null;
+  const oldStartV95=window.startAutoV95;
+  const oldStopV95=window.stopAutoV95;
+  const oldPrepareV95=window.prepareMinuteV95;
+
+  const SPEEDS_V128=[
+    {v:.5,label:'0.5×',ms:1400},
+    {v:1,label:'1×',ms:700},
+    {v:2,label:'2×',ms:350},
+    {v:4,label:'4×',ms:175}
+  ];
+
+  const style=document.createElement('style');
+  style.textContent=
+    '.match-live-grid-v128{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(260px,.72fr);gap:9px;align-items:stretch;margin-top:8px}'+
+    '.match-live-grid-v128 .flow-card-v95{margin-top:0!important;height:100%;display:flex;flex-direction:column}.match-live-grid-v128 .flow-pitch-v95{flex:1;min-height:270px}'+
+    '.match-commentary-v128{min-width:0;background:#08130e;border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column;max-height:350px}'+
+    '.match-commentary-head-v128{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px}.match-commentary-head-v128 strong{font-size:12px}.match-commentary-head-v128 .live-dot-v128{width:7px;height:7px;border-radius:50%;background:#ef5e5e;box-shadow:0 0 0 4px #ef5e5e22;animation:livePulseV128 1.3s infinite}'+
+    '@keyframes livePulseV128{50%{opacity:.35;box-shadow:0 0 0 7px #ef5e5e08}}'+
+    '.match-commentary-v128 .commentary{height:auto!important;flex:1;min-height:270px;max-height:305px;background:#06100c!important}.match-commentary-v128 .commentary:before{display:none!important}'+
+    '.speed-wrap-v128{display:flex;align-items:center;justify-content:center;gap:5px;margin:6px 0 2px;flex-wrap:wrap}.speed-label-v128{font-size:9px;color:var(--muted);font-weight:900;margin-right:2px}.speed-btn-v128{border:1px solid var(--line);background:#0c1912;color:var(--muted);border-radius:7px;padding:5px 8px;font-size:9px;font-weight:950;cursor:pointer;min-width:42px}.speed-btn-v128.active{background:#1b3b27;color:#baf0c9;border-color:#4f8d63}.speed-btn-v128:hover{color:var(--text);background:#13271c}'+
+    '.ball-readout-v128{position:absolute;left:50%;top:7px;transform:translateX(-50%);z-index:12;display:flex;align-items:center;gap:5px;max-width:72%;padding:4px 8px;border:1px solid #ffffff55;border-radius:999px;background:#06100de8;box-shadow:0 4px 12px #0008;color:#fff;font-size:9px;font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ball-readout-v128 .dir{font-size:13px;color:#ffe76f}.ball-readout-v128 b{color:#ffe76f}'+
+    '.flow-ball-v95{background:#ffe94d!important;border:2px solid #151515!important;width:16px!important;height:16px!important;box-shadow:0 0 0 5px #ffeb4935,0 0 18px #ffec62,0 3px 8px #000!important;animation:ballPulseV128 .8s infinite alternate!important}'+
+    '@keyframes ballPulseV128{to{box-shadow:0 0 0 8px #ffeb4918,0 0 24px #ffef78,0 3px 8px #000}}'+
+    '.ball-trail-v128{position:absolute;width:7px;height:7px;border-radius:50%;background:#ffe965;transform:translate(-50%,-50%);z-index:6;opacity:.2}.ball-trail-v128.t2{opacity:.12;width:5px;height:5px}.ball-trail-v128.t3{opacity:.07;width:4px;height:4px}'+
+    '.pitch-shadow-v128{position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse at center,#ffffff08 0 18%,transparent 19%),linear-gradient(90deg,transparent 49.75%,#ffffff12 49.8% 50.2%,transparent 50.25%)}'+
+    '.pitch-bench-v128{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);z-index:2;width:19%;height:5px;border-radius:5px;background:#d6d9d133;box-shadow:0 -2px 0 #ffffff2b}'+
+    '.pitch-flag-v128{position:absolute;width:2px;height:11px;background:#e9e9e9aa;z-index:3}.pitch-flag-v128:after{content:"";position:absolute;left:2px;top:0;border-top:3px solid transparent;border-bottom:3px solid transparent;border-left:6px solid #ffdd44}.pitch-flag-v128.tl{left:1px;top:1px}.pitch-flag-v128.tr{right:1px;top:1px;transform:scaleX(-1)}.pitch-flag-v128.bl{left:1px;bottom:1px;transform:scaleY(-1)}.pitch-flag-v128.br{right:1px;bottom:1px;transform:scale(-1)}'+
+    '.pitch-player-v127{transition:left .28s linear,top .28s linear!important}.match-speed-05-v128 .pitch-player-v127,.match-speed-05-v128 .flow-ball-v95{transition-duration:.75s!important}.match-speed-2-v128 .pitch-player-v127,.match-speed-2-v128 .flow-ball-v95{transition-duration:.18s!important}.match-speed-4-v128 .pitch-player-v127,.match-speed-4-v128 .flow-ball-v95{transition-duration:.09s!important}'+
+    '.finish-direct-v128{border-color:#7f6240!important;background:#3a260f!important;color:#ffdba4!important}'+
+    '.finish-note-v128{font-size:8px;color:#b8a78b;text-align:center;margin-top:2px}'+
+    '@media(max-width:950px){.match-live-grid-v128{grid-template-columns:1fr}.match-live-grid-v128 .flow-pitch-v95{min-height:205px}.match-commentary-v128{max-height:none}.match-commentary-v128 .commentary{min-height:210px;max-height:250px}}'+
+    '@media(max-width:560px){.match-live-grid-v128 .flow-pitch-v95{min-height:175px}.ball-readout-v128{max-width:82%;font-size:8px}.speed-wrap-v128{gap:4px}.speed-btn-v128{padding:5px 6px;min-width:38px}.match-commentary-v128 .commentary{min-height:190px;max-height:220px}}';
+  document.head.appendChild(style);
+
+  function stateV128(M){
+    M.uiV128=M.uiV128||{speed:1,trail:[],directFinish:false};
+    if(!SPEEDS_V128.some(x=>x.v===M.uiV128.speed))M.uiV128.speed=1;
+    return M.uiV128;
+  }
+  function stopLiveV128(M){
+    if(timerV128){clearInterval(timerV128);timerV128=null}
+    try{if(typeof oldStopV95==='function')oldStopV95(M)}catch(e){}
+    if(M)M.autoRunningV95=false;
+  }
+  function saveTrailV128(M){
+    const u=stateV128(M);
+    u.trail=u.trail||[];
+    u.trail.unshift({x:Number(M.ballXV95||50),y:Number(M.ballYV95||50)});
+    u.trail=u.trail.slice(0,3);
+  }
+  function prepareMinuteV128(M){
+    saveTrailV128(M);
+    if(typeof oldPrepareV95==='function')oldPrepareV95(M);
+  }
+  function speedInfoV128(M){
+    return SPEEDS_V128.find(x=>x.v===stateV128(M).speed)||SPEEDS_V128[1];
+  }
+  function startLiveV128(M){
+    if(!M||M.done)return;
+    stopLiveV128(M);
+    activeMatchV128=M;
+    if(M.minute===45&&!M.secondHalfV95){M.autoRunningV95=false;renderMatch(M);return}
+    M.autoRunningV95=true;
+    const info=speedInfoV128(M);
+    timerV128=setInterval(()=>{
+      if(activeMatchV128!==M||M.done){stopLiveV128(M);return}
+      if(M.pendingDecisionV107){stopLiveV128(M);renderMatch(M);return}
+      if(M.minute===45&&!M.secondHalfV95){stopLiveV128(M);renderMatch(M);return}
+      if(M.minute>=90){stopLiveV128(M);return}
+      prepareMinuteV128(M);
+      advanceMatch(M,1);
+    },info.ms);
+  }
+
+  window.stopAutoV95=function(M){stopLiveV128(M)};
+  window.startAutoV95=function(M){startLiveV128(M)};
+  window.prepareMinuteV95=function(M){prepareMinuteV128(M)};
+
+  function zoneV128(M){
+    const x=Number(M.ballXV95||50),ours=!!M.ballOursV95;
+    if(x<12)return ours?'Salida desde tu portería':'⚠️ Balón dentro de tu área';
+    if(x<27)return ours?'Salida defensiva':'⚠️ Último tercio de '+S.club;
+    if(x<43)return ours?'Construcción en campo propio':M.opp+' ataca en tu campo';
+    if(x<58)return'Centro del campo';
+    if(x<73)return ours?S.club+' ataca en campo rival':M.opp+' intenta salir';
+    if(x<88)return ours?'🔥 Último tercio rival':'Salida defensiva de '+M.opp;
+    return ours?'🚨 Balón dentro del área rival':M.opp+' inicia desde su área';
+  }
+  function ballReadoutV128(M){
+    const dir=M.ballOursV95?'→':'←';
+    const team=M.ballOursV95?S.club:M.opp;
+    return '<div class="ball-readout-v128"><span class="dir">'+dir+'</span><span><b>⚽ BALÓN</b> · '+esc(team)+' · '+esc(zoneV128(M))+'</span></div>';
+  }
+  function upgradeBallV128(M){
+    const pitch=els.matchBox.querySelector('.flow-pitch-v95');if(!pitch)return;
+    pitch.querySelectorAll('.ball-readout-v128,.ball-trail-v128,.pitch-shadow-v128,.pitch-bench-v128,.pitch-flag-v128').forEach(x=>x.remove());
+    const u=stateV128(M),tr=u.trail||[];
+    pitch.insertAdjacentHTML('afterbegin',
+      '<div class="pitch-shadow-v128"></div>'+
+      '<span class="pitch-flag-v128 tl"></span><span class="pitch-flag-v128 tr"></span><span class="pitch-flag-v128 bl"></span><span class="pitch-flag-v128 br"></span>'+
+      '<span class="pitch-bench-v128"></span>'+
+      tr.map((t,i)=>'<span class="ball-trail-v128 t'+(i+1)+'" style="left:'+clamp(t.x,1,99)+'%;top:'+clamp(t.y,1,99)+'%"></span>').join('')+
+      ballReadoutV128(M)
+    );
+    const speed=stateV128(M).speed;
+    pitch.classList.remove('match-speed-05-v128','match-speed-2-v128','match-speed-4-v128');
+    if(speed===.5)pitch.classList.add('match-speed-05-v128');
+    else if(speed===2)pitch.classList.add('match-speed-2-v128');
+    else if(speed===4)pitch.classList.add('match-speed-4-v128');
+
+    // Los jugadores se desplazan con la jugada para que el campo tenga vida real,
+    // manteniendo siempre la estructura de los dos equipos.
+    const bx=Number(M.ballXV95||50),by=Number(M.ballYV95||50);
+    pitch.querySelectorAll('.pitch-player-v127.us').forEach((el,i)=>{
+      const base=parseFloat(el.style.left)||50,baseY=parseFloat(el.style.top)||50;
+      const push=(bx-50)*.045,vertical=(by-baseY)*.055*(i===0?.15:1);
+      el.style.left=clamp(base+push,4,94)+'%';
+      el.style.top=clamp(baseY+vertical,7,93)+'%';
+    });
+    pitch.querySelectorAll('.pitch-player-v127.them').forEach((el,i)=>{
+      const base=parseFloat(el.style.left)||50,baseY=parseFloat(el.style.top)||50;
+      const push=(bx-50)*.028,vertical=(by-baseY)*.04*(i===0?.12:1);
+      el.style.left=clamp(base+push,6,96)+'%';
+      el.style.top=clamp(baseY+vertical,7,93)+'%';
+    });
+  }
+
+  function commentaryWithPitchV128(){
+    const flow=els.matchBox.querySelector('.flow-card-v95');
+    const commentary=els.matchBox.querySelector('.commentary');
+    if(!flow||!commentary||els.matchBox.querySelector('.match-live-grid-v128'))return;
+    const parent=flow.parentElement;if(!parent)return;
+    const title=[...parent.children].find(x=>x.tagName==='H3'&&x.textContent.trim()==='Partido');
+    if(title)title.style.display='none';
+    const grid=document.createElement('div');grid.className='match-live-grid-v128';
+    parent.insertBefore(grid,flow);
+    const side=document.createElement('div');side.className='match-commentary-v128';
+    side.innerHTML='<div class="match-commentary-head-v128"><span class="live-dot-v128"></span><strong>Relato en directo</strong><span class="spacer"></span><span class="muted">último arriba</span></div>';
+    grid.appendChild(flow);grid.appendChild(side);side.appendChild(commentary);
+  }
+
+  function installSpeedV128(M){
+    const score=els.matchBox.querySelector('.scoreboard');if(!score)return;
+    const mental=score.querySelector('.mental-bar-v127');
+    const anchor=mental||score.querySelector('.match-actions');
+    if(!anchor||score.querySelector('.speed-wrap-v128'))return;
+    const u=stateV128(M);
+    anchor.insertAdjacentHTML('afterend',
+      '<div class="speed-wrap-v128"><span class="speed-label-v128">Velocidad</span>'+
+      SPEEDS_V128.map(x=>'<button class="speed-btn-v128 '+(x.v===u.speed?'active':'')+'" data-speed="'+x.v+'">'+x.label+'</button>').join('')+
+      '</div>'
+    );
+    score.querySelectorAll('.speed-btn-v128').forEach(b=>b.onclick=()=>{
+      const v=Number(b.dataset.speed);if(!SPEEDS_V128.some(x=>x.v===v))return;
+      stateV128(M).speed=v;
+      score.querySelectorAll('.speed-btn-v128').forEach(x=>x.classList.toggle('active',Number(x.dataset.speed)===v));
+      if(M.autoRunningV95)startLiveV128(M);
+      save();
+    });
+  }
+
+  function finishDirectV128(M){
+    if(!M||M.done)return;
+    stopLiveV128(M);
+    const u=stateV128(M);u.directFinish=true;
+    // Finalizar significa finalizar: descarta una decisión pendiente y no crea otra
+    // porque el avance restante se procesa de una sola vez hasta el 90.
+    M.pendingDecisionV107=null;
+    M.secondHalfV95=true;
+    M.autoRunningV95=false;
+    M.events.push({text:'⏭ '+M.minute+"' Simulación rápida activada hasta el final.",side:'us'});
+    const remaining=Math.max(1,90-M.minute);
+    advanceMatch(M,remaining);
+  }
+  function bindControlsV128(M){
+    const play=els.matchBox.querySelector('#step5');
+    if(play&&!M.done){
+      play.disabled=false;
+      play.textContent=M.autoRunningV95?'⏸ Pausar':'▶ Reanudar';
+      play.onclick=()=>{
+        if(M.autoRunningV95){stopLiveV128(M);renderMatch(M)}
+        else{
+          if(M.minute===45&&!M.secondHalfV95){
+            M.secondHalfV95=true;
+            M.events.push({text:"▶ 46' Comienza la segunda parte.",side:'us'});
+          }
+          startLiveV128(M);renderMatch(M);
+        }
+      };
+    }
+    const end=els.matchBox.querySelector('#finishMatch');
+    if(end&&!M.done){
+      end.disabled=false;
+      end.classList.add('finish-direct-v128');
+      end.textContent='⏭ Finalizar partido';
+      end.onclick=()=>finishDirectV128(M);
+      if(!els.matchBox.querySelector('.finish-note-v128')){
+        end.insertAdjacentHTML('afterend','<div class="finish-note-v128">Va directamente al 90’ sin detenerse en decisiones.</div>');
+      }
+    }
+  }
+
+  const openMatchV128Base=openMatch;
+  openMatch=function(f){
+    stopLiveV128(activeMatchV128);
+    openMatchV128Base(f);
+    setTimeout(()=>{
+      // El motor antiguo arranca a los 60 ms. Lo sustituimos por uno regulable.
+      const M=activeMatchV128;
+      if(M&&!M.done)startLiveV128(M);
+    },95);
+  };
+
+  const renderMatchV128Base=renderMatch;
+  renderMatch=function(M){
+    activeMatchV128=M;
+    stateV128(M);
+    renderMatchV128Base(M);
+    if(!M)return;
+    commentaryWithPitchV128();
+    upgradeBallV128(M);
+    installSpeedV128(M);
+    bindControlsV128(M);
+  };
+
+  // La primera renderización sucede dentro del openMatch base; capturamos ese partido
+  // y sustituimos el temporizador heredado inmediatamente después.
+  const oldRenderCaptureV128=renderMatch;
+  renderMatch=function(M){
+    activeMatchV128=M;
+    oldRenderCaptureV128(M);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
