@@ -9226,6 +9226,302 @@ loadDB=async function(){
 })();
 
 
+
+// ===== PLAYER ATTRIBUTES 2.0 10.24 =====
+// Perfiles técnicos estables por posición, revelados progresivamente por scouting.
+// Los atributos acompañan la evolución del OVR y aportan una pequeña diferencia real al XI.
+(function(){
+  const style=document.createElement('style');
+  style.textContent=
+    '.attrs-v124{margin-top:12px}.attrs-grid-v124{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin-top:8px}'+
+    '.attr-v124{padding:8px 5px;border:1px solid var(--line);border-radius:9px;background:#0b1711;text-align:center}.attr-v124 small{display:block;color:var(--muted);font-size:8px;font-weight:900}.attr-v124 strong{display:block;font-size:17px;margin-top:2px}.attr-v124.lock strong{color:#718078;font-size:13px}'+
+    '.attr-v124.elite{border-color:#756128;background:#211c0e}.attr-v124.elite strong{color:#ffd776}.attr-v124.strong strong{color:#8ee8a8}.attr-v124.weak strong{color:#ffaaaa}'+
+    '.player-style-v124{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}.style-chip-v124{display:inline-flex;padding:4px 7px;border:1px solid var(--line);border-radius:999px;font-size:9px;font-weight:900;background:#0b1711}'+
+    '.attribute-profile-v124{padding:11px;border:1px solid var(--line);border-radius:11px;background:#09150f;margin-top:10px}.attribute-profile-v124 h3{margin:0}'+
+    '.profile-btn-v124{white-space:nowrap}.attr-reveal-note-v124{font-size:9px;color:var(--muted);margin-top:7px}'+
+    '@media(max-width:760px){.attrs-grid-v124{grid-template-columns:repeat(3,1fr)}}';
+
+  document.head.appendChild(style);
+
+  function primaryPosV124(p){return String(p?.positions||'').split(',')[0].trim()||'CM'}
+  function jitterV124(p,key,span=4){
+    const h=hashV7(String(p?.id||p?.name)+'|'+key+'|attrs124');
+    return (h%(span*2+1))-span;
+  }
+  function capAttrV124(x){return clamp(Math.round(x),25,99)}
+  function templateV124(pos){
+    if(pos==='CB')return{pace:-4,shoot:-24,pass:-3,dribble:-9,defense:8,physical:7};
+    if(['LB','RB','LWB','RWB'].includes(pos))return{pace:5,shoot:-13,pass:0,dribble:2,defense:4,physical:2};
+    if(pos==='CDM')return{pace:-1,shoot:-8,pass:4,dribble:0,defense:6,physical:5};
+    if(['CM','LM','RM'].includes(pos))return{pace:0,shoot:-2,pass:5,dribble:3,defense:0,physical:0};
+    if(pos==='CAM')return{pace:2,shoot:3,pass:6,dribble:7,defense:-13,physical:-5};
+    if(['LW','RW'].includes(pos))return{pace:8,shoot:3,pass:1,dribble:8,defense:-16,physical:-5};
+    if(['ST','CF'].includes(pos))return{pace:4,shoot:8,pass:-5,dribble:2,defense:-23,physical:3};
+    return{pace:0,shoot:0,pass:0,dribble:0,defense:0,physical:0};
+  }
+  function buildAttributesV124(p){
+    const o=Number(p.overall||50),pos=primaryPosV124(p);
+    if(pos==='GK'){
+      return{
+        gk:true,
+        diving:capAttrV124(o+2+jitterV124(p,'diving',3)),
+        handling:capAttrV124(o+jitterV124(p,'handling',4)),
+        kicking:capAttrV124(o-2+jitterV124(p,'kicking',5)),
+        reflexes:capAttrV124(o+3+jitterV124(p,'reflexes',3)),
+        speed:capAttrV124(o-25+jitterV124(p,'gkspeed',7)),
+        positioning:capAttrV124(o+1+jitterV124(p,'gkpos',3))
+      };
+    }
+    const t=templateV124(pos);
+    return{
+      gk:false,
+      pace:capAttrV124(o+t.pace+jitterV124(p,'pace',5)),
+      shooting:capAttrV124(o+t.shoot+jitterV124(p,'shooting',5)),
+      passing:capAttrV124(o+t.pass+jitterV124(p,'passing',4)),
+      dribbling:capAttrV124(o+t.dribble+jitterV124(p,'dribbling',4)),
+      defending:capAttrV124(o+t.defense+jitterV124(p,'defending',4)),
+      physical:capAttrV124(o+t.physical+jitterV124(p,'physical',5))
+    };
+  }
+  function attrKeysV124(a){
+    return a.gk
+      ?[['Estirada','diving'],['Paradas','handling'],['Saque','kicking'],['Reflejos','reflexes'],['Velocidad','speed'],['Colocación','positioning']]
+      :[['Ritmo','pace'],['Tiro','shooting'],['Pase','passing'],['Regate','dribbling'],['Defensa','defending'],['Físico','physical']];
+  }
+  function focusKeyV124(p,a){
+    const f=p.individualFocus||'General';
+    if(a.gk)return f==='Pase'?'kicking':f==='Velocidad'?'speed':f==='Físico'?'handling':null;
+    return f==='Finalización'?'shooting':f==='Pase'||f==='Balón parado'?'passing':f==='Regate'?'dribbling':f==='Defensa'?'defending':f==='Físico'?'physical':f==='Velocidad'?'pace':null;
+  }
+  function initAttributesV124(p){
+    if(!p)return null;
+    if(!p.attributesV124){
+      p.attributesV124=buildAttributesV124(p);
+      p.attrOverallV124=Number(p.overall||50);
+    }
+    const a=p.attributesV124;
+    const current=Number(p.overall||50),last=Number.isFinite(p.attrOverallV124)?p.attrOverallV124:current;
+    const delta=current-last;
+    if(delta){
+      for(const [,k] of attrKeysV124(a))a[k]=capAttrV124((a[k]||50)+delta);
+      if(delta>0){
+        const fk=focusKeyV124(p,a);
+        if(fk&&Number.isFinite(a[fk]))a[fk]=capAttrV124(a[fk]+Math.min(2,delta));
+      }
+      p.attrOverallV124=current;
+    }
+    p.injuryTendencyV124=Number.isFinite(p.injuryTendencyV124)?p.injuryTendencyV124:clamp(
+      18+(hashV7(String(p.id||p.name)+'|inj124')%43)+(p.age>=31?(p.age-30)*2:0),8,86
+    );
+    return a;
+  }
+  function injuryLabelV124(p){
+    initAttributesV124(p);
+    const x=p.injuryTendencyV124||35;
+    const history=Number(p.devInjuryDaysV119||0);
+    const n=clamp(x+(history>=45?12:history>=20?5:0),0,100);
+    return n>=68?'Alta':n>=46?'Media-alta':n>=28?'Media':'Baja';
+  }
+  function styleV124(p){
+    const a=initAttributesV124(p),pos=primaryPosV124(p);
+    if(a.gk){
+      if(a.speed>=65&&a.kicking>=78)return'Portero líbero';
+      if(a.reflexes>=a.positioning+4)return'Portero de reflejos';
+      return'Portero equilibrado';
+    }
+    if(pos==='CB'){
+      if(a.pace>=78)return'Central corrector';
+      if(a.passing>=76)return'Central constructor';
+      if(a.physical>=82)return'Central dominante';
+      return'Central defensivo';
+    }
+    if(['LB','RB','LWB','RWB'].includes(pos)){
+      if(a.pace>=82&&a.dribbling>=75)return'Lateral profundo';
+      if(a.defending>=a.dribbling+8)return'Lateral defensivo';
+      return'Lateral equilibrado';
+    }
+    if(pos==='CDM'){
+      if(a.passing>=a.defending&&a.passing>=78)return'Pivote organizador';
+      if(a.physical>=80)return'Mediocentro recuperador';
+      return'Ancla';
+    }
+    if(['CM','LM','RM'].includes(pos)){
+      if(a.passing>=82)return'Organizador';
+      if(a.physical>=78&&a.defending>=72)return'Box to box';
+      return'Centrocampista mixto';
+    }
+    if(pos==='CAM'){
+      if(a.passing>=a.shooting+3)return'Mediapunta creador';
+      if(a.dribbling>=84)return'Mediapunta desequilibrante';
+      return'Mediapunta llegador';
+    }
+    if(['LW','RW'].includes(pos)){
+      if(a.pace>=84&&a.dribbling>=82)return'Extremo vertical';
+      if(a.shooting>=82)return'Extremo goleador';
+      if(a.passing>=80)return'Extremo creador';
+      return'Extremo equilibrado';
+    }
+    if(['ST','CF'].includes(pos)){
+      if(a.shooting>=85&&a.physical>=80)return'9 de área';
+      if(a.pace>=84)return'Atacante al espacio';
+      if(a.passing>=74&&a.dribbling>=78)return'Delantero asociativo';
+      return'Delantero completo';
+    }
+    return'Perfil equilibrado';
+  }
+  function formLabelV124(p){
+    const f=window.formInfoV111?.(p);
+    return f?.label||((p.avgRating||0)>=7?'Buena':'Sin datos suficientes');
+  }
+  function scoutConfidenceV124(p){
+    if(p.club===S.club)return 100;
+    const r=S.playerScoutingV123?.reports?.[String(p.id)];
+    if(r&&Number.isFinite(r.confidence))return r.confidence;
+    return (p.overall||0)>=88?100:(p.overall||0)>=84?74:(p.overall||0)>=79?52:15;
+  }
+  function attrEstimateV124(p,key,c){
+    const a=initAttributesV124(p),v=Number(a[key]||50);
+    if(c>=95)return String(v);
+    const width=c>=80?2:c>=65?4:c>=50?6:c>=35?9:12;
+    const shift=(hashV7(String(p.id)+'|'+key+'|estimate124')%(width*2+1))-width;
+    const center=clamp(v+Math.round(shift*.35),25,99);
+    return Math.max(25,center-width)+'–'+Math.min(99,center+width);
+  }
+  function attrUnlockedV124(index,c){
+    if(c>=72)return true;
+    if(index===0||index===5)return c>=28;
+    if(index===2||index===3)return c>=43;
+    return c>=58;
+  }
+  function attrClassV124(v){
+    const n=Number(v);
+    if(!Number.isFinite(n))return'lock';
+    if(n>=88)return'elite';
+    if(n>=78)return'strong';
+    if(n<58)return'weak';
+    return'';
+  }
+  function attrsHTMLV124(p,confidence=100){
+    const a=initAttributesV124(p),c=clamp(Number(confidence||0),0,100);
+    return '<div class="attrs-grid-v124">'+attrKeysV124(a).map(([label,key],i)=>{
+      const unlocked=attrUnlockedV124(i,c);
+      const val=unlocked?attrEstimateV124(p,key,c):'🔒';
+      const cls=unlocked&&c>=95?attrClassV124(a[key]):'lock';
+      return '<div class="attr-v124 '+cls+'"><small>'+esc(label)+'</small><strong>'+esc(val)+'</strong></div>';
+    }).join('')+'</div>';
+  }
+  function extraKnowledgeV124(p,c){
+    const style=c>=82?styleV124(p):'🔒 Se desbloquea con un informe avanzado';
+    const injury=c>=70?injuryLabelV124(p):'🔒';
+    const form=c>=60?formLabelV124(p):'🔒';
+    return '<div class="player-style-v124"><span class="style-chip-v124">🎯 '+esc(style)+'</span><span class="style-chip-v124">🩺 Lesiones: '+esc(injury)+'</span><span class="style-chip-v124">📈 Forma: '+esc(form)+'</span></div>';
+  }
+  function attributePanelV124(p,c=100,title='Atributos'){
+    return '<div class="attribute-profile-v124 attrs-v124"><div class="row"><div><h3>'+esc(title)+'</h3><div class="muted">'+(c>=95?'Datos completos':'Informe '+Math.round(c)+'% · los rangos se estrechan al seguir observándolo')+'</div></div><span class="spacer"></span><span class="badge">'+esc(primaryPosV124(p))+'</span></div>'+attrsHTMLV124(p,c)+extraKnowledgeV124(p,c)+(c<95?'<div class="attr-reveal-note-v124">Más seguimiento desbloquea cifras exactas, estilo de juego, forma y riesgo de lesión.</div>':'')+'</div>';
+  }
+  window.playerAttributesV124=p=>initAttributesV124(p);
+  window.playerStyleV124=p=>styleV124(p);
+  window.playerInjuryWeightV124=p=>1+(Number(p?.injuryTendencyV124||35)-35)/120;
+
+  function openScoutedProfileV124(id){
+    const p=S.players.find(x=>String(x.id)===String(id));if(!p)return;
+    const c=scoutConfidenceV124(p);
+    const report=S.playerScoutingV123?.reports?.[String(p.id)];
+    const ovr=c>=25?(c>=95?String(p.overall):Math.max(40,p.overall-Math.max(1,Math.round((100-c)/17)))+'–'+Math.min(99,p.overall+Math.max(1,Math.round((100-c)/20)))):'?';
+    const potential=c>=70?(c>=95?String(p.potential):Math.max(p.overall,p.potential-5)+'–'+Math.min(95,p.potential+4)):'?';
+    els.matchBox.innerHTML=
+      '<div class="row"><div><h2 style="margin:0">'+esc(p.name)+'</h2><div class="muted">'+esc(p.club)+' · '+esc(p.positions)+' · '+p.age+' años · '+esc(p.nation||'')+'</div></div><span class="spacer"></span><span class="profile-ovr">'+esc(ovr)+'</span><button class="btn ghost" id="closeAttrV124">Cerrar</button></div>'+
+      '<div class="profile-grid"><div class="profile-kpi"><small>Potencial</small><strong>'+esc(potential)+'</strong></div><div class="profile-kpi"><small>Informe</small><strong>'+Math.round(c)+'%</strong></div><div class="profile-kpi"><small>Pie</small><strong>'+esc(p.foot||'—')+'</strong></div><div class="profile-kpi"><small>Estado</small><strong>'+(report?.status==='scouting'?'En seguimiento':c>=95?'Completo':'Pendiente')+'</strong></div></div>'+
+      attributePanelV124(p,c,'Perfil futbolístico');
+    els.matchModal.classList.remove('hidden');
+    $('#closeAttrV124').onclick=()=>els.matchModal.classList.add('hidden');
+  }
+
+  function decorateMarketV124(){
+    const root=$('#searchResults');if(!root)return;
+    root.querySelectorAll('.buy').forEach(b=>{
+      const host=b.parentElement;if(!host||host.querySelector('.profilePlayerV124'))return;
+      const x=document.createElement('button');x.className='btn ghost profilePlayerV124 profile-btn-v124';x.dataset.id=b.dataset.id;x.textContent='📊 Perfil';
+      x.onclick=e=>{e.stopPropagation();openScoutedProfileV124(x.dataset.id)};
+      host.insertBefore(x,b);
+    });
+  }
+
+  const searchV124Base=searchMarket;
+  searchMarket=function(open){searchV124Base(open);decorateMarketV124()};
+
+  const specialV124Base=showSpecialMarketV7;
+  showSpecialMarketV7=function(kind){specialV124Base(kind);decorateMarketV124()};
+
+  const transfersV124Base=renderTransfersV7;
+  renderTransfersV7=function(){
+    transfersV124Base();
+    ensureV7State();
+    els.view.querySelectorAll('.shortlist-row .buy').forEach(b=>{
+      const host=b.parentElement;if(!host||host.querySelector('.profilePlayerV124'))return;
+      const x=document.createElement('button');x.className='btn ghost profilePlayerV124 profile-btn-v124';x.dataset.id=b.dataset.id;x.textContent='📊 Perfil';
+      x.onclick=e=>{e.stopPropagation();openScoutedProfileV124(x.dataset.id)};
+      host.insertBefore(x,b);
+    });
+  };
+
+  const negotiateV124Base=openTransferNegotiation;
+  openTransferNegotiation=function(id){
+    const p=S.players.find(x=>String(x.id)===String(id));
+    negotiateV124Base(id);
+    if(!p||els.matchModal.classList.contains('hidden'))return;
+    const report=els.matchBox.querySelector('.scout-report-v123');
+    if(report&&!report.querySelector('.attrs-v124')){
+      report.insertAdjacentHTML('beforeend',attributePanelV124(p,scoutConfidenceV124(p),'Atributos observados'));
+    }
+  };
+
+  // Ficha de la plantilla: la información propia siempre está completa.
+  document.addEventListener('click',e=>{
+    const node=e.target?.closest?.('[data-player-profile]');if(!node)return;
+    const id=node.dataset.playerProfile;
+    setTimeout(()=>{
+      const p=S?.players?.find(x=>String(x.id)===String(id));
+      if(!p||p.club!==S.club||els.matchModal.classList.contains('hidden'))return;
+      if(els.matchBox.querySelector('.attrs-own-v124'))return;
+      const section=document.createElement('div');section.className='attrs-own-v124';section.innerHTML=attributePanelV124(p,100,'Atributos y estilo');
+      const evolution=[...els.matchBox.querySelectorAll('.profile-section')].find(x=>x.querySelector('h3')?.textContent?.includes('Evolución'));
+      if(evolution)evolution.insertAdjacentElement('beforebegin',section);else els.matchBox.appendChild(section);
+    },0);
+  });
+
+  // Perfil por atributos: pequeña influencia real en la fuerza del XI.
+  const teamPowerV124Base=teamPower;
+  teamPower=function(ids){
+    const base=teamPowerV124Base(ids);
+    const arr=(ids||[]).map(id=>S.players.find(p=>String(p.id)===String(id))).filter(Boolean);
+    if(!arr.length)return base;
+    let total=0;
+    for(const p of arr){
+      const a=initAttributesV124(p),pos=primaryPosV124(p);
+      let fit=p.overall||50;
+      if(a.gk)fit=a.diving*.20+a.handling*.18+a.kicking*.10+a.reflexes*.24+a.speed*.05+a.positioning*.23;
+      else if(pos==='CB')fit=a.defending*.36+a.physical*.25+a.passing*.14+a.pace*.15+a.dribbling*.05+a.shooting*.05;
+      else if(['LB','RB','LWB','RWB'].includes(pos))fit=a.pace*.24+a.defending*.25+a.physical*.18+a.passing*.16+a.dribbling*.13+a.shooting*.04;
+      else if(pos==='CDM')fit=a.defending*.26+a.passing*.24+a.physical*.20+a.dribbling*.12+a.pace*.10+a.shooting*.08;
+      else if(['CM','LM','RM'].includes(pos))fit=a.passing*.28+a.dribbling*.20+a.physical*.15+a.defending*.13+a.pace*.12+a.shooting*.12;
+      else if(pos==='CAM')fit=a.passing*.26+a.dribbling*.25+a.shooting*.19+a.pace*.14+a.physical*.09+a.defending*.07;
+      else if(['LW','RW'].includes(pos))fit=a.pace*.25+a.dribbling*.25+a.shooting*.20+a.passing*.16+a.physical*.09+a.defending*.05;
+      else fit=a.shooting*.31+a.pace*.22+a.dribbling*.17+a.physical*.15+a.passing*.10+a.defending*.05;
+      total+=fit-(p.overall||50);
+    }
+    return base+clamp((total/arr.length)*.16,-2.2,2.2);
+  };
+
+  const ensureV124Base=ensureV7State;
+  ensureV7State=function(){
+    ensureV124Base();
+    if(!S)return;
+    for(const p of S.players||[])initAttributesV124(p);
+  };
+})();
+
+
 loadDB();
 })();
 </script>
