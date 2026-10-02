@@ -7349,7 +7349,7 @@ loadDB=async function(){
   function planClubV118(club){
     const f=financeV118(club);
     if(f.lastPlan===S.date&&Array.isArray(f.needs)&&f.needs.length)return f.needs;
-    const needs=planClubV118(club);
+    const needs=clubNeedsV118(club);
     f.needs=needs;f.lastPlan=S.date;
     return needs;
   }
@@ -7526,7 +7526,16 @@ loadDB=async function(){
     w.lastWeekly=date;seasonBudgetsV118();
     rebuildSquadIndexV118();
 
-    const clubs=[...squadIndexV118.keys()].filter(c=>c!==S.club&&DB.clubs.has(c)&&squadV118(c).length>=15);
+    const allClubs=[...squadIndexV118.keys()].filter(c=>c!==S.club&&DB.clubs.has(c)&&squadV118(c).length>=15);
+    // Reparte la carga: cada lunes solo analiza una muestra de clubes.
+    // Los clubes cambian de muestra cada semana y Deadline Day amplía el grupo.
+    const sampleSize=deadlineV118(date)?Math.min(70,allClubs.length):Math.min(36,allClubs.length);
+    const seed=hashV7(date+'|club-ai');
+    const clubs=allClubs
+      .map((club,i)=>({club,k:hashV7(club+'|'+seed+'|'+i)}))
+      .sort((a,b)=>a.k-b.k)
+      .slice(0,sampleSize)
+      .map(x=>x.club);
     const urgency=clubs.map(club=>{
       const needs=planClubV118(club),f=financeV118(club),pf=window.clubBoardProfileV117?.(club)||{ambition:3};
       return{club,score:(needs[0]?.score||0)+pf.ambition*2+Math.min(12,(f.budget||0)/5000000)+Math.random()*8};
